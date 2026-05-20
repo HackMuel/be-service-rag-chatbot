@@ -76,10 +76,10 @@ public class IngestionService
 
         for (int i = 0; i < chunks.Count; i++)
         {
-            Console.WriteLine($"=== CHUNK {i} ===");
-            Console.WriteLine(chunks[i]);
-            Console.WriteLine();
+            Console.WriteLine(
+                $"CHUNK {i}: type={QdrantService.DetectRecordType(chunks[i])}, length={chunks[i].Length}");
         }
+
         for (int i = 0; i < chunks.Count; i++)
         {
             var embedding = await _ollamaService.GenerateEmbeddingAsync(chunks[i]);
@@ -92,7 +92,9 @@ public class IngestionService
                 documentId,
                 request.Title,
                 chunks[i],
-                embedding
+                embedding,
+                i,
+                request.Department
             );
         }
 
@@ -115,7 +117,11 @@ public class IngestionService
 
         foreach (var section in sections)
         {
-            if (section.Contains("Data Karyawan:", StringComparison.OrdinalIgnoreCase))
+            if (section.Contains("Profil Perusahaan", StringComparison.OrdinalIgnoreCase))
+            {
+                chunks.AddRange(SplitProfileSection(section));
+            }
+            else if (section.Contains("Data Karyawan:", StringComparison.OrdinalIgnoreCase))
             {
                 var employeeChunks = System.Text.RegularExpressions.Regex
                     .Split(section, @"(?=Data Karyawan:\s*NIK:)")
@@ -152,6 +158,63 @@ public class IngestionService
         }
 
         return chunks;
+    }
+
+    private static List<string> SplitProfileSection(string section)
+    {
+        var profileFields = new[]
+        {
+            "Nama Unit",
+            "Kapasitas Produksi",
+            "Lokasi",
+            "Jumlah Karyawan"
+        };
+
+        var chunks = new List<string>();
+
+        foreach (var field in profileFields)
+        {
+            var value = ExtractProfileValue(section, field, profileFields);
+
+            if (string.IsNullOrWhiteSpace(value))
+                continue;
+
+            chunks.Add($@"Profil Perusahaan:
+Field: {field}
+Value: {value}");
+        }
+
+        if (!chunks.Any())
+        {
+            chunks.Add(section);
+        }
+
+        return chunks;
+    }
+
+    private static string ExtractProfileValue(
+        string section,
+        string field,
+        string[] allFields)
+    {
+        var nextFields = string.Join(
+            "|",
+            allFields
+                .Where(x => !x.Equals(field, StringComparison.OrdinalIgnoreCase))
+                .Select(System.Text.RegularExpressions.Regex.Escape));
+
+        var match = System.Text.RegularExpressions.Regex.Match(
+            section,
+            $@"\b{System.Text.RegularExpressions.Regex.Escape(field)}\b\s*:?\s*(.+?)(?=\s+(?:{nextFields})\b\s*:?\s*|$)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase |
+            System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        if (!match.Success)
+            return "";
+
+        return System.Text.RegularExpressions.Regex
+            .Replace(match.Groups[1].Value, @"\s+", " ")
+            .Trim();
     }
 
     private static string CleanExtractedText(string text)
