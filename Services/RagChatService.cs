@@ -18,10 +18,23 @@ public class RagChatService
     public async Task<ChatResponse> AskAsync(string question)
     {
         List<RetrievedChunk> chunks = new();
+        question = question.Trim();
 
         var nikMatch = System.Text.RegularExpressions.Regex.Match(
             question,
             @"RU\s*6\s*-\s*\d{4}",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+
+        );
+        var maintenanceMatch = System.Text.RegularExpressions.Regex.Match(
+            question,
+            @"MT\s*-\s*\d{3}",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+        );
+
+        var dateMatch = System.Text.RegularExpressions.Regex.Match(
+            question,
+            @"\d{2}-\d{2}-\d{4}",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase
         );
 
@@ -39,6 +52,20 @@ public class RagChatService
             ).ToUpper();
 
             chunks = await _qdrantService.SearchByKeywordAsync(normalizedNik);
+        }
+        else if (maintenanceMatch.Success)
+        {
+            var normalizedCode = System.Text.RegularExpressions.Regex.Replace(
+                maintenanceMatch.Value,
+                @"\s+",
+                ""
+            ).ToUpper();
+
+            chunks = await _qdrantService.SearchByKeywordAsync(normalizedCode);
+        }
+        else if (dateMatch.Success)
+        {
+            chunks = await _qdrantService.SearchByKeywordAsync(dateMatch.Value);
         }
         else if (isEmployeeQuery)
         {
