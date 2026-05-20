@@ -8,16 +8,19 @@ public class RagChatService
     private readonly OllamaService _ollamaService;
     private readonly QdrantService _qdrantService;
     private readonly ILogger<RagChatService> _logger;
+    private readonly QueryAnalyzerService _queryAnalyzerService;
     private const float MinimumSemanticSimilarity = 0.50f;
 
     public RagChatService(
         OllamaService ollamaService,
         QdrantService qdrantService,
-        ILogger<RagChatService> logger)
+        ILogger<RagChatService> logger,
+         QueryAnalyzerService queryAnalyzerService)
     {
         _ollamaService = ollamaService;
         _qdrantService = qdrantService;
         _logger = logger;
+        _queryAnalyzerService = queryAnalyzerService;
     }
 
     public async Task<ChatResponse> AskAsync(string question)
@@ -31,6 +34,8 @@ public class RagChatService
         {
             return NotFoundResponse();
         }
+
+        var analysis = _queryAnalyzerService.Analyze(question);
 
         _logger.LogInformation("RAG query={Query}", TruncateForLog(question, 160));
 
@@ -52,25 +57,21 @@ public class RagChatService
             RegexOptions.IgnoreCase
         );
 
-        if (nikMatch.Success)
+        if (!string.IsNullOrWhiteSpace(analysis.Nik))
         {
-            var normalizedNik = QdrantService.NormalizeNik(nikMatch.Value);
-
-            chunks = await _qdrantService.SearchByNikAsync(normalizedNik);
+            chunks = await _qdrantService.SearchByNikAsync(analysis.Nik);
             retrievalMode = "exact-nik";
             contextLimit = 1;
         }
-        else if (maintenanceMatch.Success)
+        else if (!string.IsNullOrWhiteSpace(analysis.MaintenanceCode))
         {
-            var normalizedCode = QdrantService.NormalizeMaintenanceCode(maintenanceMatch.Value);
-
-            chunks = await _qdrantService.SearchByMaintenanceCodeAsync(normalizedCode);
+            chunks = await _qdrantService.SearchByMaintenanceCodeAsync(analysis.MaintenanceCode);
             retrievalMode = "exact-maintenance-code";
             contextLimit = 1;
         }
-        else if (dateMatch.Success)
+        else if (!string.IsNullOrWhiteSpace(analysis.Date))
         {
-            chunks = await _qdrantService.SearchByDateAsync(dateMatch.Value);
+            chunks = await _qdrantService.SearchByDateAsync(analysis.Date);
             retrievalMode = "exact-date";
             contextLimit = 10;
         }
