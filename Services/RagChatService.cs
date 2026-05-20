@@ -9,18 +9,21 @@ public class RagChatService
     private readonly QdrantService _qdrantService;
     private readonly ILogger<RagChatService> _logger;
     private readonly QueryAnalyzerService _queryAnalyzerService;
+    private readonly AnswerFormatterService _answerFormatterService;
     private const float MinimumSemanticSimilarity = 0.50f;
 
     public RagChatService(
         OllamaService ollamaService,
         QdrantService qdrantService,
         ILogger<RagChatService> logger,
-         QueryAnalyzerService queryAnalyzerService)
+         QueryAnalyzerService queryAnalyzerService,
+         AnswerFormatterService answerFormatterService)
     {
         _ollamaService = ollamaService;
         _qdrantService = qdrantService;
         _logger = logger;
         _queryAnalyzerService = queryAnalyzerService;
+        _answerFormatterService = answerFormatterService;
     }
 
     public async Task<ChatResponse> AskAsync(string question)
@@ -246,7 +249,7 @@ public class RagChatService
             return NotFoundResponse();
         }
 
-        var deterministicAnswer = TryBuildDeterministicAnswer(
+        var deterministicAnswer = _answerFormatterService.TryBuildDeterministicAnswer(
             relevantChunks,
             retrievalMode,
             question);
