@@ -102,26 +102,92 @@ public class RagChatService
         }
         else
         {
-            var personKeyword = ExtractPersonKeyword(question);
+            var division = ExtractDivisionFromQuestion(question);
+            var shift = ExtractShiftFromQuestion(question);
+            var employeeStatus = ExtractEmployeeStatusFromQuestion(question);
+            var position = ExtractPositionFromQuestion(question);
+            var maintenanceStatus = ExtractMaintenanceStatusFromQuestion(question);
+            var approval = ExtractApprovalFromQuestion(question);
+            var location = ExtractLocationFromQuestion(question);
+            var technician = ExtractTechnicianFromQuestion(question);
 
-            if (LooksLikePersonName(personKeyword))
+            if (IsEmployeeQuery(question) && !string.IsNullOrWhiteSpace(division))
             {
-                if (IsOvertimeQuery(question))
-                {
-                    chunks = await _qdrantService.SearchByRecordTypeAsync(
-                        "overtime",
-                        personKeyword,
-                        10);
-                    retrievalMode = "exact-name-overtime";
-                }
+                chunks = await _qdrantService.SearchEmployeesByDivisionAsync(division);
+                retrievalMode = "employee_by_division";
+                contextLimit = 50;
+            }
+            else if (IsEmployeeQuery(question) && !string.IsNullOrWhiteSpace(shift))
+            {
+                chunks = await _qdrantService.SearchEmployeesByShiftAsync(shift);
+                retrievalMode = "employee_by_shift";
+                contextLimit = 50;
+            }
+            else if (IsEmployeeQuery(question) && !string.IsNullOrWhiteSpace(employeeStatus))
+            {
+                chunks = await _qdrantService.SearchEmployeesByStatusAsync(employeeStatus);
+                retrievalMode = "employee_by_status";
+                contextLimit = 50;
+            }
+            else if (IsEmployeeQuery(question) && !string.IsNullOrWhiteSpace(position))
+            {
+                chunks = await _qdrantService.SearchEmployeesByPositionAsync(position);
+                retrievalMode = "employee_by_position";
+                contextLimit = 50;
+            }
+            else if ((IsOvertimeQuery(question) || ContainsAny(question, "approval")) &&
+                     !string.IsNullOrWhiteSpace(approval))
+            {
+                chunks = await _qdrantService.SearchOvertimeByApprovalAsync(approval);
+                retrievalMode = "overtime_by_approval";
+                contextLimit = 50;
+            }
+            else if (IsOvertimeQuery(question) && !string.IsNullOrWhiteSpace(division))
+            {
+                chunks = await _qdrantService.SearchOvertimeByDivisionAsync(division);
+                retrievalMode = "overtime_by_division";
+                contextLimit = 50;
+            }
+            else if (IsMaintenanceQuery(question) && !string.IsNullOrWhiteSpace(maintenanceStatus))
+            {
+                chunks = await _qdrantService.SearchMaintenanceByStatusAsync(maintenanceStatus);
+                retrievalMode = "maintenance_by_status";
+                contextLimit = 50;
+            }
+            else if (IsMaintenanceQuery(question) && !string.IsNullOrWhiteSpace(location))
+            {
+                chunks = await _qdrantService.SearchMaintenanceByLocationAsync(location);
+                retrievalMode = "maintenance_by_location";
+                contextLimit = 50;
+            }
+            else if (IsMaintenanceQuery(question) &&
+                     question.Contains("teknisi", StringComparison.OrdinalIgnoreCase) &&
+                     !string.IsNullOrWhiteSpace(technician))
+            {
+                chunks = await _qdrantService.SearchMaintenanceByTechnicianAsync(technician);
+                retrievalMode = "maintenance_by_technician";
+                contextLimit = 50;
+            }
+            else
+            {
+                var personKeyword = ExtractPersonKeyword(question);
 
-                if (!chunks.Any())
+                if (LooksLikePersonName(personKeyword))
                 {
-                    chunks = await _qdrantService.SearchByNameAsync(personKeyword, 10);
-                    retrievalMode = "exact-name";
-                }
+                    if (IsOvertimeQuery(question))
+                    {
+                        chunks = await _qdrantService.SearchOvertimeByNameAsync(personKeyword, 10);
+                        retrievalMode = "exact-name-overtime";
+                    }
 
-                contextLimit = 10;
+                    if (!chunks.Any())
+                    {
+                        chunks = await _qdrantService.SearchByNameAsync(personKeyword, 10);
+                        retrievalMode = "exact-name";
+                    }
+
+                    contextLimit = 10;
+                }
             }
         }
 
@@ -360,12 +426,14 @@ JAWABAN:
             return BuildProfileAnswer(chunks, question);
         }
 
-        if (!retrievalMode.StartsWith("exact-", StringComparison.OrdinalIgnoreCase))
+        if (retrievalMode is "semantic" or "sop")
         {
             return null;
         }
 
-        return BuildStructuredAnswer(chunks);
+        return chunks.Any(IsStructuredRecord)
+            ? BuildStructuredAnswer(chunks)
+            : null;
     }
 
     private static string? BuildStructuredAnswer(List<RetrievedChunk> chunks)
@@ -516,6 +584,177 @@ JAWABAN:
         return ContainsAny(question, "lembur", "rekap lembur");
     }
 
+    private static bool IsEmployeeQuery(string question)
+    {
+        return ContainsAny(question, "karyawan", "pegawai");
+    }
+
+    private static bool IsMaintenanceQuery(string question)
+    {
+        return ContainsAny(
+            question,
+            "maintenance",
+            "peralatan",
+            "teknisi",
+            "log maintenance");
+    }
+
+    private static string ExtractDivisionFromQuestion(string question)
+    {
+        if (ContainsAny(question, "it & digitalisasi", "it digitalisasi", "digitalisasi"))
+            return "IT & Digitalisasi";
+
+        if (ContainsAny(question, "operasional kilang"))
+            return "Operasional Kilang";
+
+        if (ContainsAny(question, "human capital"))
+            return "Human Capital";
+
+        if (ContainsAny(question, "maintenance"))
+            return "Maintenance";
+
+        if (ContainsAny(question, "distribusi"))
+            return "Distribusi";
+
+        if (ContainsAny(question, "keuangan"))
+            return "Keuangan";
+
+        if (ContainsAny(question, "security"))
+            return "Security";
+
+        if (ContainsAny(question, "hsse"))
+            return "HSSE";
+
+        return "";
+    }
+
+    private static string ExtractShiftFromQuestion(string question)
+    {
+        var match = Regex.Match(question, @"\bshift\s*([ABC])\b", RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups[1].Value.ToUpperInvariant() : "";
+    }
+
+    private static string ExtractEmployeeStatusFromQuestion(string question)
+    {
+        if (ContainsAny(question, "kontrak"))
+            return "Kontrak";
+
+        if (ContainsAny(question, "tetap"))
+            return "Tetap";
+
+        return "";
+    }
+
+    private static string ExtractPositionFromQuestion(string question)
+    {
+        var positions = new[]
+        {
+            "Supervisor",
+            "Operator",
+            "Manager",
+            "Coordinator",
+            "Analyst",
+            "Engineer",
+            "Staff"
+        };
+
+        return ExtractCanonicalValue(question, positions);
+    }
+
+    private static string ExtractMaintenanceStatusFromQuestion(string question)
+    {
+        if (ContainsAny(question, "maintenance berkala", "berkala"))
+            return "Maintenance Berkala";
+
+        if (ContainsAny(question, "perbaikan"))
+            return "Perbaikan";
+
+        if (Regex.IsMatch(question, @"\bnormal\b", RegexOptions.IgnoreCase))
+            return "Normal";
+
+        return "";
+    }
+
+    private static string ExtractApprovalFromQuestion(string question)
+    {
+        if (ContainsAny(question, "pending"))
+            return "Pending";
+
+        if (ContainsAny(question, "disetujui"))
+            return "Disetujui";
+
+        if (ContainsAny(question, "ditolak"))
+            return "Ditolak";
+
+        return "";
+    }
+
+    private static string ExtractLocationFromQuestion(string question)
+    {
+        var locations = new[]
+        {
+            "Gate Utama",
+            "Utility Plant",
+            "Area Produksi B",
+            "Area Tanki A",
+            "Warehouse"
+        };
+
+        return ExtractCanonicalValue(question, locations);
+    }
+
+    private static string ExtractTechnicianFromQuestion(string question)
+    {
+        var cleaned = Regex.Replace(question, @"[?.,!]", " ");
+        var stopWords = new[]
+        {
+            "siapa",
+            "saja",
+            "teknisi",
+            "maintenance",
+            "peralatan",
+            "log",
+            "tampilkan",
+            "berikan",
+            "data",
+            "di",
+            "lokasi",
+            "yang",
+            "bernama",
+            "dengan",
+            "nama"
+        };
+
+        foreach (var stopWord in stopWords)
+        {
+            cleaned = Regex.Replace(
+                cleaned,
+                $@"\b{Regex.Escape(stopWord)}\b",
+                " ",
+                RegexOptions.IgnoreCase);
+        }
+
+        cleaned = Regex.Replace(cleaned, @"\s+", " ").Trim();
+
+        return LooksLikePersonName(cleaned) ? cleaned : "";
+    }
+
+    private static string ExtractCanonicalValue(string question, IEnumerable<string> values)
+    {
+        foreach (var value in values)
+        {
+            if (Regex.IsMatch(
+                    question,
+                    $@"\b{Regex.Escape(value)}\b",
+                    RegexOptions.IgnoreCase))
+            {
+                return value;
+            }
+        }
+
+        return "";
+    }
+
     private static string BuildSopKeyword(string question)
     {
         if (ContainsAny(question, "tangki", "penyimpanan"))
@@ -589,6 +828,13 @@ JAWABAN:
             return value;
 
         return value[..maxLength];
+    }
+
+    private static bool IsStructuredRecord(RetrievedChunk chunk)
+    {
+        var recordType = ResolveRecordType(chunk);
+
+        return recordType is "employee" or "overtime" or "maintenance";
     }
 
     private static string ResolveRecordType(RetrievedChunk chunk)

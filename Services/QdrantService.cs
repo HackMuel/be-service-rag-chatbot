@@ -225,6 +225,126 @@ public class QdrantService
         return await SearchByPayloadMatchAsync("nameNormalized", NormalizeKeyword(name), limit);
     }
 
+    public async Task<List<RetrievedChunk>> SearchByPayloadFilterAsync(
+        Dictionary<string, string> filters,
+        int limit = 50)
+    {
+        var must = filters
+            .Where(x => !string.IsNullOrWhiteSpace(x.Key) &&
+                        !string.IsNullOrWhiteSpace(x.Value))
+            .Select(x => new
+            {
+                key = x.Key,
+                match = new
+                {
+                    value = x.Value
+                }
+            })
+            .ToArray();
+
+        if (!must.Any())
+        {
+            return new List<RetrievedChunk>();
+        }
+
+        var filter = new
+        {
+            must
+        };
+
+        return await ScrollByFilterAsync(filter, "", limit);
+    }
+
+    public async Task<List<RetrievedChunk>> SearchEmployeesByDivisionAsync(string division, int limit = 50)
+    {
+        return await SearchByPayloadFilterAsync(new Dictionary<string, string>
+        {
+            ["recordType"] = "employee",
+            ["division"] = division
+        }, limit);
+    }
+
+    public async Task<List<RetrievedChunk>> SearchEmployeesByShiftAsync(string shift, int limit = 50)
+    {
+        return await SearchByPayloadFilterAsync(new Dictionary<string, string>
+        {
+            ["recordType"] = "employee",
+            ["shift"] = shift
+        }, limit);
+    }
+
+    public async Task<List<RetrievedChunk>> SearchEmployeesByStatusAsync(string status, int limit = 50)
+    {
+        return await SearchByPayloadFilterAsync(new Dictionary<string, string>
+        {
+            ["recordType"] = "employee",
+            ["employeeStatus"] = status
+        }, limit);
+    }
+
+    public async Task<List<RetrievedChunk>> SearchEmployeesByPositionAsync(string position, int limit = 50)
+    {
+        return await SearchByPayloadFilterAsync(new Dictionary<string, string>
+        {
+            ["recordType"] = "employee",
+            ["position"] = position
+        }, limit);
+    }
+
+    public async Task<List<RetrievedChunk>> SearchOvertimeByApprovalAsync(string approval, int limit = 50)
+    {
+        return await SearchByPayloadFilterAsync(new Dictionary<string, string>
+        {
+            ["recordType"] = "overtime",
+            ["approval"] = approval
+        }, limit);
+    }
+
+    public async Task<List<RetrievedChunk>> SearchOvertimeByDivisionAsync(string division, int limit = 50)
+    {
+        return await SearchByPayloadFilterAsync(new Dictionary<string, string>
+        {
+            ["recordType"] = "overtime",
+            ["division"] = division
+        }, limit);
+    }
+
+    public async Task<List<RetrievedChunk>> SearchOvertimeByNameAsync(string name, int limit = 50)
+    {
+        return await SearchByPayloadFilterAsync(new Dictionary<string, string>
+        {
+            ["recordType"] = "overtime",
+            ["nameNormalized"] = NormalizeKeyword(name)
+        }, limit);
+    }
+
+    public async Task<List<RetrievedChunk>> SearchMaintenanceByStatusAsync(string status, int limit = 50)
+    {
+        return await SearchByPayloadFilterAsync(new Dictionary<string, string>
+        {
+            ["recordType"] = "maintenance",
+            ["maintenanceStatus"] = status
+        }, limit);
+    }
+
+    public async Task<List<RetrievedChunk>> SearchMaintenanceByLocationAsync(string location, int limit = 50)
+    {
+        return await SearchByPayloadFilterAsync(new Dictionary<string, string>
+        {
+            ["recordType"] = "maintenance",
+            ["location"] = location
+        }, limit);
+    }
+
+    public async Task<List<RetrievedChunk>> SearchMaintenanceByTechnicianAsync(string technician, int limit = 50)
+    {
+        return await SearchByPayloadFilterAsync(new Dictionary<string, string>
+        {
+            ["recordType"] = "maintenance",
+            ["technician"] = technician
+        }, limit);
+    }
+
     public async Task<List<RetrievedChunk>> SearchByRecordTypeAsync(
         string recordType,
         string keyword,
@@ -258,46 +378,10 @@ public class QdrantService
             return new List<RetrievedChunk>();
         }
 
-        var filter = new
+        return await SearchByPayloadFilterAsync(new Dictionary<string, string>
         {
-            must = new[]
-            {
-                new
-                {
-                    key = fieldName,
-                    match = new
-                    {
-                        value
-                    }
-                }
-            }
-        };
-
-        var body = new Dictionary<string, object?>
-        {
-            ["limit"] = limit,
-            ["with_payload"] = true,
-            ["with_vector"] = false,
-            ["filter"] = filter
-        };
-
-        var response = await _httpClient.PostAsync(
-            $"{BaseUrl}/collections/{CollectionName}/points/scroll",
-            new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
-        );
-
-        response.EnsureSuccessStatusCode();
-
-        var resultJson = await response.Content.ReadAsStringAsync();
-
-        using var doc = JsonDocument.Parse(resultJson);
-
-        return doc.RootElement
-            .GetProperty("result")
-            .GetProperty("points")
-            .EnumerateArray()
-            .Select(item => MapRetrievedChunk(item, 1.0f))
-            .ToList();
+            [fieldName] = value
+        }, limit);
     }
 
     public async Task<List<RetrievedChunk>> SearchByKeywordAsync(
