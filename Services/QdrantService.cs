@@ -521,6 +521,13 @@ public class QdrantService
             content.Contains("Keamanan Area Kilang", StringComparison.OrdinalIgnoreCase) ||
             content.Contains("APD", StringComparison.OrdinalIgnoreCase))
             return "sop";
+        if (content.Contains("Catatan Audit", StringComparison.OrdinalIgnoreCase) ||
+            content.Contains("Audit internal", StringComparison.OrdinalIgnoreCase) ||
+            content.Contains("backup otomatis", StringComparison.OrdinalIgnoreCase) ||
+            content.Contains("logbook digital", StringComparison.OrdinalIgnoreCase))
+        {
+            return "audit";
+        }
 
         return "document";
     }

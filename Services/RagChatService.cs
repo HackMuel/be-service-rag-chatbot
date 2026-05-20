@@ -100,6 +100,16 @@ public class RagChatService
             retrievalMode = "profile";
             contextLimit = 5;
         }
+        else if (IsAuditQuery(question))
+        {
+            chunks = await _qdrantService.SearchByRecordTypeAsync(
+                "audit",
+                "",
+                3);
+
+            retrievalMode = "audit";
+            contextLimit = 3;
+        }
         else
         {
             var division = ExtractDivisionFromQuestion(question);
@@ -426,6 +436,14 @@ JAWABAN:
             return BuildProfileAnswer(chunks, question);
         }
 
+        if (retrievalMode == "exact-maintenance-code")
+        {
+            var answer = BuildMaintenanceFieldSpecificAnswer(chunks.First(), question);
+
+            if (!string.IsNullOrWhiteSpace(answer))
+                return answer;
+        }
+
         if (retrievalMode is "semantic" or "sop")
         {
             return null;
@@ -503,7 +521,44 @@ JAWABAN:
 
         return lines.Any() ? string.Join("\n", lines) : null;
     }
+    private static string? BuildMaintenanceFieldSpecificAnswer(
+    RetrievedChunk chunk,
+    string question)
+    {
+        var code = ValueOrFallback(
+            chunk.MaintenanceCode,
+            QdrantService.ExtractMaintenanceCode(chunk.Content));
 
+        var equipment = ValueOrFallback(
+            chunk.Equipment,
+            QdrantService.ExtractEquipment(chunk.Content));
+
+        var location = ValueOrFallback(
+            chunk.Location,
+            QdrantService.ExtractLocation(chunk.Content));
+
+        var status = ValueOrFallback(
+            chunk.MaintenanceStatus,
+            QdrantService.ExtractMaintenanceStatus(chunk.Content));
+
+        var technician = ValueOrFallback(
+            chunk.Technician,
+            QdrantService.ExtractTechnician(chunk.Content));
+
+        if (ContainsAny(question, "teknisi"))
+            return $"Teknisi untuk {code} adalah {technician}.";
+
+        if (ContainsAny(question, "status"))
+            return $"Status peralatan {code} adalah {status}.";
+
+        if (ContainsAny(question, "lokasi", "di mana", "dimana"))
+            return $"Lokasi peralatan {code} adalah {location}.";
+
+        if (ContainsAny(question, "peralatan", "alat"))
+            return $"Peralatan dengan kode {code} adalah {equipment}.";
+
+        return null;
+    }
     private static string? BuildProfileAnswer(List<RetrievedChunk> chunks, string question)
     {
         var fields = chunks
@@ -522,6 +577,12 @@ JAWABAN:
 
         if (ContainsAny(question, "kapasitas", "kapasitas produksi"))
             return FindProfileValue(fields, "Kapasitas Produksi");
+
+        if (ContainsAny(question, "jumlah shift", "shift operasional"))
+            return FindProfileValue(fields, "Jumlah Shift Operasional");
+
+        if (ContainsAny(question, "direktur operasi"))
+            return FindProfileValue(fields, "Direktur Operasi");
 
         if (ContainsAny(question, "lokasi", "alamat"))
             return FindProfileValue(fields, "Lokasi");
@@ -576,6 +637,9 @@ JAWABAN:
             "kapasitas produksi",
             "lokasi",
             "jumlah karyawan",
+            "jumlah shift",
+            "shift operasional",
+            "direktur operasi",
             "perusahaan dalam dokumen");
     }
 
@@ -703,6 +767,19 @@ JAWABAN:
         return ExtractCanonicalValue(question, locations);
     }
 
+    private static bool IsAuditQuery(string question)
+    {
+        return ContainsAny(
+            question,
+            "audit",
+            "backup",
+            "server",
+            "logbook",
+            "anomali suhu",
+            "kepatuhan apd",
+            "pelanggaran minor");
+    }
+
     private static string ExtractTechnicianFromQuestion(string question)
     {
         var cleaned = Regex.Replace(question, @"[?.,!]", " ");
@@ -780,6 +857,12 @@ JAWABAN:
         if (ContainsAny(question, "nama unit", "unit perusahaan"))
             return "Nama Unit";
 
+        if (ContainsAny(question, "jumlah shift", "shift operasional"))
+            return "Jumlah Shift Operasional";
+
+        if (ContainsAny(question, "direktur operasi"))
+            return "Direktur Operasi";
+
         if (ContainsAny(question, "kapasitas", "kapasitas produksi"))
             return "Kapasitas Produksi";
 
@@ -843,4 +926,5 @@ JAWABAN:
             ? QdrantService.DetectRecordType(chunk.Content)
             : chunk.RecordType;
     }
+
 }

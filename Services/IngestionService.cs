@@ -162,13 +162,28 @@ public class IngestionService
 
     private static List<string> SplitProfileSection(string section)
     {
+        var normalizedChunks = System.Text.RegularExpressions.Regex
+            .Split(section, @"(?=Profil Perusahaan:\s*Field:)")
+            .Select(x => x.Trim())
+            .Where(x => x.StartsWith("Profil Perusahaan:", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (normalizedChunks.Any())
+        {
+            return normalizedChunks;
+        }
+
         var profileFields = new[]
         {
-            "Nama Unit",
-            "Kapasitas Produksi",
-            "Lokasi",
-            "Jumlah Karyawan"
-        };
+        "Nama Unit",
+        "Lokasi",
+        "Bidang",
+        "Jumlah Karyawan",
+        "Jumlah Shift Operasional",
+        "Jam Operasional",
+        "Direktur Operasi",
+        "Kapasitas Produksi"
+    };
 
         var chunks = new List<string>();
 
@@ -190,6 +205,58 @@ Value: {value}");
         }
 
         return chunks;
+    }
+
+    private static string NormalizeProfileSection(string text)
+    {
+        if (text.Contains("Profil Perusahaan:\nField:", StringComparison.OrdinalIgnoreCase))
+            return text;
+
+        var match = System.Text.RegularExpressions.Regex.Match(
+            text,
+            @"1\.\s*Profil Perusahaan\s+(.*?)(?=\s*2\.\s*Data Karyawan Internal)",
+            System.Text.RegularExpressions.RegexOptions.Singleline |
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+        );
+
+        if (!match.Success)
+            return text;
+
+        var profileText = match.Groups[1].Value;
+
+        var fields = new[]
+        {
+        "Nama Unit",
+        "Lokasi",
+        "Bidang",
+        "Jumlah Karyawan",
+        "Jumlah Shift Operasional",
+        "Jam Operasional",
+        "Direktur Operasi",
+        "Kapasitas Produksi"
+    };
+
+        var normalizedChunks = new List<string>
+    {
+        "1. Profil Perusahaan"
+    };
+
+        foreach (var field in fields)
+        {
+            var value = ExtractProfileValue(profileText, field, fields);
+
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                normalizedChunks.Add($@"Profil Perusahaan:
+Field: {field}
+Value: {value}");
+            }
+        }
+
+        var normalizedProfile = string.Join("\n\n", normalizedChunks);
+
+        return text.Remove(match.Index, match.Length)
+            .Insert(match.Index, normalizedProfile);
     }
 
     private static string ExtractProfileValue(
@@ -247,6 +314,7 @@ Value: {value}");
             "$1 $2"
         );
 
+        text = NormalizeProfileSection(text);
         text = NormalizeEmployeeTable(text);
         text = NormalizeOvertimeTable(text);
         text = NormalizeMaintenanceTable(text);
@@ -259,6 +327,8 @@ Value: {value}");
 
         return text.Trim();
     }
+
+
     private static string NormalizeEmployeeTable(string text)
     {
         var divisions = "IT & Digitalisasi|Operasional Kilang|Human Capital|Maintenance|Distribusi|Keuangan|Security|HSSE";
