@@ -11,6 +11,7 @@ public class RagChatService
     private readonly QueryAnalyzerService _queryAnalyzerService;
     private readonly AnswerFormatterService _answerFormatterService;
     private readonly PromptBuilderService _promptBuilderService;
+    private readonly RetrievalService _retrievalService;
     private const float MinimumSemanticSimilarity = 0.50f;
 
     public RagChatService(
@@ -19,7 +20,8 @@ public class RagChatService
         ILogger<RagChatService> logger,
          QueryAnalyzerService queryAnalyzerService,
          AnswerFormatterService answerFormatterService,
-         PromptBuilderService promptBuilderService)
+         PromptBuilderService promptBuilderService,
+         RetrievalService retrievalService)
     {
         _ollamaService = ollamaService;
         _qdrantService = qdrantService;
@@ -27,210 +29,26 @@ public class RagChatService
         _queryAnalyzerService = queryAnalyzerService;
         _answerFormatterService = answerFormatterService;
         _promptBuilderService = promptBuilderService;
+        _retrievalService = retrievalService;
     }
 
     public async Task<ChatResponse> AskAsync(string question)
     {
-        List<RetrievedChunk> chunks = new();
         question = (question ?? "").Trim();
-        var retrievalMode = "semantic";
-        var contextLimit = 5;
 
         if (string.IsNullOrWhiteSpace(question))
         {
             return NotFoundResponse();
         }
 
-        var analysis = _queryAnalyzerService.Analyze(question);
-
         _logger.LogInformation("RAG query={Query}", TruncateForLog(question, 160));
 
-        var nikMatch = Regex.Match(
-            question,
-            @"\bRU\s*6\s*-?\s*\d{4}\b",
-            RegexOptions.IgnoreCase
+        var analysis = _queryAnalyzerService.Analyze(question);
 
-        );
-        var maintenanceMatch = Regex.Match(
-            question,
-            @"\bMT\s*-?\s*\d{3}\b",
-            RegexOptions.IgnoreCase
-        );
+        var retrievalResult = await _retrievalService.RetrieveAsync(analysis);
 
-        var dateMatch = Regex.Match(
-            question,
-            @"\b\d{2}-\d{2}-\d{4}\b",
-            RegexOptions.IgnoreCase
-        );
-
-        if (!string.IsNullOrWhiteSpace(analysis.Nik))
-        {
-            chunks = await _qdrantService.SearchByNikAsync(analysis.Nik);
-            retrievalMode = "exact-nik";
-            contextLimit = 1;
-        }
-        else if (!string.IsNullOrWhiteSpace(analysis.MaintenanceCode))
-        {
-            chunks = await _qdrantService.SearchByMaintenanceCodeAsync(analysis.MaintenanceCode);
-            retrievalMode = "exact-maintenance-code";
-            contextLimit = 1;
-        }
-        else if (!string.IsNullOrWhiteSpace(analysis.Date))
-        {
-            chunks = await _qdrantService.SearchByDateAsync(analysis.Date);
-            retrievalMode = "exact-date";
-            contextLimit = 10;
-        }
-        else if (IsSopQuery(question))
-        {
-            chunks = await _qdrantService.SearchByRecordTypeAsync(
-                "sop",
-                BuildSopKeyword(question),
-                5);
-            retrievalMode = "sop";
-            contextLimit = 5;
-        }
-        else if (IsProfileQuery(question))
-        {
-            var profileKeyword = BuildProfileKeyword(question);
-
-            chunks = await _qdrantService.SearchByRecordTypeAsync(
-                "profile",
-                profileKeyword,
-                5);
-
-            if (!chunks.Any() && !string.IsNullOrWhiteSpace(profileKeyword))
-            {
-                chunks = await _qdrantService.SearchByRecordTypeAsync("profile", "", 5);
-            }
-
-            retrievalMode = "profile";
-            contextLimit = 5;
-        }
-        else if (IsAuditQuery(question))
-        {
-            chunks = await _qdrantService.SearchByRecordTypeAsync(
-                "audit",
-                "",
-                3);
-
-            retrievalMode = "audit";
-            contextLimit = 3;
-        }
-        else
-        {
-            var division = ExtractDivisionFromQuestion(question);
-            var shift = ExtractShiftFromQuestion(question);
-            var employeeStatus = ExtractEmployeeStatusFromQuestion(question);
-            var position = ExtractPositionFromQuestion(question);
-            var maintenanceStatus = ExtractMaintenanceStatusFromQuestion(question);
-            var approval = ExtractApprovalFromQuestion(question);
-            var location = ExtractLocationFromQuestion(question);
-            var technician = ExtractTechnicianFromQuestion(question);
-
-            if (IsEmployeeQuery(question) && !string.IsNullOrWhiteSpace(division))
-            {
-                chunks = await _qdrantService.SearchEmployeesByDivisionAsync(division);
-                retrievalMode = "employee_by_division";
-                contextLimit = 50;
-            }
-            else if (IsEmployeeQuery(question) && !string.IsNullOrWhiteSpace(shift))
-            {
-                chunks = await _qdrantService.SearchEmployeesByShiftAsync(shift);
-                retrievalMode = "employee_by_shift";
-                contextLimit = 50;
-            }
-            else if (IsEmployeeQuery(question) && !string.IsNullOrWhiteSpace(employeeStatus))
-            {
-                chunks = await _qdrantService.SearchEmployeesByStatusAsync(employeeStatus);
-                retrievalMode = "employee_by_status";
-                contextLimit = 50;
-            }
-            else if (IsEmployeeQuery(question) && !string.IsNullOrWhiteSpace(position))
-            {
-                chunks = await _qdrantService.SearchEmployeesByPositionAsync(position);
-                retrievalMode = "employee_by_position";
-                contextLimit = 50;
-            }
-            else if ((IsOvertimeQuery(question) || ContainsAny(question, "approval")) &&
-                     !string.IsNullOrWhiteSpace(approval))
-            {
-                chunks = await _qdrantService.SearchOvertimeByApprovalAsync(approval);
-                retrievalMode = "overtime_by_approval";
-                contextLimit = 50;
-            }
-            else if (IsOvertimeQuery(question) && !string.IsNullOrWhiteSpace(division))
-            {
-                chunks = await _qdrantService.SearchOvertimeByDivisionAsync(division);
-                retrievalMode = "overtime_by_division";
-                contextLimit = 50;
-            }
-            else if (IsMaintenanceQuery(question) && !string.IsNullOrWhiteSpace(maintenanceStatus))
-            {
-                chunks = await _qdrantService.SearchMaintenanceByStatusAsync(maintenanceStatus);
-                retrievalMode = "maintenance_by_status";
-                contextLimit = 50;
-            }
-            else if (IsMaintenanceQuery(question) && !string.IsNullOrWhiteSpace(location))
-            {
-                chunks = await _qdrantService.SearchMaintenanceByLocationAsync(location);
-                retrievalMode = "maintenance_by_location";
-                contextLimit = 50;
-            }
-            else if (IsMaintenanceQuery(question) &&
-                     question.Contains("teknisi", StringComparison.OrdinalIgnoreCase) &&
-                     !string.IsNullOrWhiteSpace(technician))
-            {
-                chunks = await _qdrantService.SearchMaintenanceByTechnicianAsync(technician);
-                retrievalMode = "maintenance_by_technician";
-                contextLimit = 50;
-            }
-            else
-            {
-                var personKeyword = ExtractPersonKeyword(question);
-
-                if (LooksLikePersonName(personKeyword))
-                {
-                    if (IsOvertimeQuery(question))
-                    {
-                        chunks = await _qdrantService.SearchOvertimeByNameAsync(personKeyword, 10);
-                        retrievalMode = "exact-name-overtime";
-                    }
-
-                    if (!chunks.Any())
-                    {
-                        chunks = await _qdrantService.SearchByNameAsync(personKeyword, 10);
-                        retrievalMode = "exact-name";
-                    }
-
-                    contextLimit = 10;
-                }
-            }
-        }
-
-        if (!chunks.Any())
-        {
-            var embedding =
-                await _ollamaService.GenerateEmbeddingAsync(question);
-
-            chunks =
-                await _qdrantService.SearchSemanticAsync(embedding, 5);
-
-            chunks = chunks
-                .Where(x => x.Similarity >= MinimumSemanticSimilarity)
-                .ToList();
-
-            retrievalMode = "semantic";
-            contextLimit = 5;
-        }
-
-        var relevantChunks = chunks
-            .GroupBy(x => x.Id)
-            .Select(x => x.First())
-            .OrderByDescending(x => x.Similarity)
-            .ThenBy(x => x.ChunkIndex ?? int.MaxValue)
-            .Take(contextLimit)
-            .ToList();
+        var relevantChunks = retrievalResult.Chunks;
+        var retrievalMode = retrievalResult.RetrievalMode;
 
         _logger.LogInformation(
             "RAG retrieval mode={RetrievalMode}, chunks={ChunkCount}",
