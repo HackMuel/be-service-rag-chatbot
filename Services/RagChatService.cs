@@ -10,6 +10,7 @@ public class RagChatService
     private readonly ILogger<RagChatService> _logger;
     private readonly QueryAnalyzerService _queryAnalyzerService;
     private readonly AnswerFormatterService _answerFormatterService;
+    private readonly PromptBuilderService _promptBuilderService;
     private const float MinimumSemanticSimilarity = 0.50f;
 
     public RagChatService(
@@ -17,13 +18,15 @@ public class RagChatService
         QdrantService qdrantService,
         ILogger<RagChatService> logger,
          QueryAnalyzerService queryAnalyzerService,
-         AnswerFormatterService answerFormatterService)
+         AnswerFormatterService answerFormatterService,
+         PromptBuilderService promptBuilderService)
     {
         _ollamaService = ollamaService;
         _qdrantService = qdrantService;
         _logger = logger;
         _queryAnalyzerService = queryAnalyzerService;
         _answerFormatterService = answerFormatterService;
+        _promptBuilderService = promptBuilderService;
     }
 
     public async Task<ChatResponse> AskAsync(string question)
@@ -263,53 +266,7 @@ public class RagChatService
             };
         }
 
-        var context = string.Join(
-            "\n\n",
-            relevantChunks.Select((x, index) =>
-                $@"[Sumber {index + 1}]
-DocumentTitle: {x.DocumentTitle}
-RecordType: {ResolveRecordType(x)}
-SectionTitle: {ValueOrFallback(x.SectionTitle, QdrantService.ExtractSectionTitle(x.Content))}
-Similarity: {x.Similarity:F2}
-ChunkIndex: {(x.ChunkIndex.HasValue ? x.ChunkIndex.Value.ToString() : "-")}
-Content:
-{x.Content}"
-            ));
-
-        var prompt = $@"
-Kamu adalah AI assistant internal perusahaan.
-
-ATURAN:
-- Selalu jawab dalam Bahasa Indonesia.
-- Jawab HANYA berdasarkan context.
-- Jangan membuat informasi sendiri.
-- Jika informasi tidak ada di context, katakan:
-  'Maaf, saya tidak menemukan informasi tersebut.'
-- Jangan mengubah nama unit, NIK, kode, angka, tanggal, status, atau nilai yang ada di context.
-- Setiap blok context adalah record yang berbeda. Jangan menggabungkan beberapa record menjadi satu record.
-- Jika ditemukan lebih dari satu orang atau lebih dari satu record dengan nama yang sama, tampilkan semuanya.
-- Jangan menggabungkan Data Karyawan, Rekap Lembur, SOP, dan Log Maintenance menjadi satu record.
-- Kelompokkan jawaban berdasarkan RecordType jika context berisi employee, overtime, maintenance, sop, profile, atau document.
-- Jika context berisi Data Karyawan, tampilkan semua field: NIK, Nama, Divisi, Jabatan, Shift, Status.
-- Jika context berisi Rekap Lembur, tampilkan semua field: Tanggal, Nama, Divisi, Durasi, Approval.
-- Jika context berisi Log Maintenance, tampilkan semua field: Kode, Peralatan, Lokasi, Status, Teknisi.
-- Jika context berisi SOP, tampilkan poin-poin SOP yang tersedia.
-- Jika user menanyakan NIK seseorang, cari field NIK pada context.
-- Untuk pertanyaan exact seperti NIK, kode maintenance, dan tanggal, jawab hanya dari record yang ada di context.
-- Jangan menambahkan informasi yang tidak tertulis di context.
-- Jawaban harus jelas, informatif, dan profesional.
-
-
-=====================
-CONTEXT:
-{context}
-=====================
-
-PERTANYAAN:
-{question}
-
-JAWABAN:
-";
+        var prompt = _promptBuilderService.Build(question, relevantChunks);
 
         var answer =
             await _ollamaService.GenerateChatAsync(prompt);
