@@ -43,17 +43,7 @@ public class AnswerFormatterService
 
         if (employeeChunks.Any())
         {
-            lines.Add("Data Karyawan:");
-
-            foreach (var chunk in employeeChunks)
-            {
-                lines.Add($@"- NIK: {ValueOrFallback(chunk.Nik, ChunkMetadataExtractor.ExtractNik(chunk.Content))}
-  Nama: {ValueOrFallback(chunk.Name, ChunkMetadataExtractor.ExtractName(chunk.Content))}
-  Divisi: {ValueOrFallback(chunk.Division, ChunkMetadataExtractor.ExtractDivision(chunk.Content))}
-  Jabatan: {ValueOrFallback(chunk.Position, ChunkMetadataExtractor.ExtractPosition(chunk.Content))}
-  Shift: {ValueOrFallback(chunk.Shift, ChunkMetadataExtractor.ExtractShift(chunk.Content))}
-  Status: {ValueOrFallback(chunk.EmployeeStatus, ChunkMetadataExtractor.ExtractEmployeeStatus(chunk.Content))}");
-            }
+            AppendEmployeeAnswer(lines, employeeChunks);
         }
 
         var overtimeChunks = chunks
@@ -65,16 +55,7 @@ public class AnswerFormatterService
             if (lines.Any())
                 lines.Add("");
 
-            lines.Add("Rekap Lembur:");
-
-            foreach (var chunk in overtimeChunks)
-            {
-                lines.Add($@"- Tanggal: {ValueOrFallback(chunk.Date, ChunkMetadataExtractor.ExtractDate(chunk.Content))}
-  Nama: {ValueOrFallback(chunk.Name, ChunkMetadataExtractor.ExtractName(chunk.Content))}
-  Divisi: {ValueOrFallback(chunk.Division, ChunkMetadataExtractor.ExtractDivision(chunk.Content))}
-  Durasi: {ValueOrFallback(chunk.Duration, ChunkMetadataExtractor.ExtractDuration(chunk.Content))}
-  Approval: {ValueOrFallback(chunk.Approval, ChunkMetadataExtractor.ExtractApproval(chunk.Content))}");
-            }
+            AppendOvertimeAnswer(lines, overtimeChunks);
         }
 
         var maintenanceChunks = chunks
@@ -86,16 +67,7 @@ public class AnswerFormatterService
             if (lines.Any())
                 lines.Add("");
 
-            lines.Add("Log Maintenance:");
-
-            foreach (var chunk in maintenanceChunks)
-            {
-                lines.Add($@"- Kode: {ValueOrFallback(chunk.MaintenanceCode, ChunkMetadataExtractor.ExtractMaintenanceCode(chunk.Content))}
-  Peralatan: {ValueOrFallback(chunk.Equipment, ChunkMetadataExtractor.ExtractEquipment(chunk.Content))}
-  Lokasi: {ValueOrFallback(chunk.Location, ChunkMetadataExtractor.ExtractLocation(chunk.Content))}
-  Status: {ValueOrFallback(chunk.MaintenanceStatus, ChunkMetadataExtractor.ExtractMaintenanceStatus(chunk.Content))}
-  Teknisi: {ValueOrFallback(chunk.Technician, ChunkMetadataExtractor.ExtractTechnician(chunk.Content))}");
-            }
+            AppendMaintenanceAnswer(lines, maintenanceChunks);
         }
 
         return lines.Any() ? string.Join("\n", lines) : null;
@@ -220,5 +192,118 @@ public class AnswerFormatterService
     {
         return keywords.Any(keyword =>
             value.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void AppendEmployeeAnswer(
+    List<string> lines,
+    List<RetrievedChunk> employeeChunks)
+    {
+        if (employeeChunks.Count == 1)
+        {
+            var chunk = employeeChunks.First();
+
+            lines.Add("Data Karyawan:");
+            lines.Add($@"- NIK: {ValueOrFallback(chunk.Nik, ChunkMetadataExtractor.ExtractNik(chunk.Content))}
+  Nama: {ValueOrFallback(chunk.Name, ChunkMetadataExtractor.ExtractName(chunk.Content))}
+  Divisi: {ValueOrFallback(chunk.Division, ChunkMetadataExtractor.ExtractDivision(chunk.Content))}
+  Jabatan: {ValueOrFallback(chunk.Position, ChunkMetadataExtractor.ExtractPosition(chunk.Content))}
+  Shift: {ValueOrFallback(chunk.Shift, ChunkMetadataExtractor.ExtractShift(chunk.Content))}
+  Status: {ValueOrFallback(chunk.EmployeeStatus, ChunkMetadataExtractor.ExtractEmployeeStatus(chunk.Content))}");
+
+            return;
+        }
+
+        lines.Add($"Ditemukan {employeeChunks.Count} data karyawan.");
+        lines.Add("");
+        lines.Add("| No | NIK | Nama | Divisi | Jabatan | Shift | Status |");
+        lines.Add("|---|---|---|---|---|---|---|");
+
+        for (int i = 0; i < employeeChunks.Count; i++)
+        {
+            var chunk = employeeChunks[i];
+
+            var nik = ValueOrFallback(chunk.Nik, ChunkMetadataExtractor.ExtractNik(chunk.Content));
+            var name = ValueOrFallback(chunk.Name, ChunkMetadataExtractor.ExtractName(chunk.Content));
+            var division = ValueOrFallback(chunk.Division, ChunkMetadataExtractor.ExtractDivision(chunk.Content));
+            var position = ValueOrFallback(chunk.Position, ChunkMetadataExtractor.ExtractPosition(chunk.Content));
+            var shift = ValueOrFallback(chunk.Shift, ChunkMetadataExtractor.ExtractShift(chunk.Content));
+            var status = ValueOrFallback(chunk.EmployeeStatus, ChunkMetadataExtractor.ExtractEmployeeStatus(chunk.Content));
+
+            lines.Add($"| {i + 1} | {nik} | {name} | {division} | {position} | {shift} | {status} |");
+        }
+    }
+
+    private static void AppendOvertimeAnswer(
+    List<string> lines,
+    List<RetrievedChunk> overtimeChunks)
+    {
+        if (overtimeChunks.Count == 1)
+        {
+            var chunk = overtimeChunks.First();
+
+            lines.Add("Rekap Lembur:");
+            lines.Add($@"- Tanggal: {ValueOrFallback(chunk.Date, ChunkMetadataExtractor.ExtractDate(chunk.Content))}
+  Nama: {ValueOrFallback(chunk.Name, ChunkMetadataExtractor.ExtractName(chunk.Content))}
+  Divisi: {ValueOrFallback(chunk.Division, ChunkMetadataExtractor.ExtractDivision(chunk.Content))}
+  Durasi: {ValueOrFallback(chunk.Duration, ChunkMetadataExtractor.ExtractDuration(chunk.Content))}
+  Approval: {ValueOrFallback(chunk.Approval, ChunkMetadataExtractor.ExtractApproval(chunk.Content))}");
+
+            return;
+        }
+
+        lines.Add($"Ditemukan {overtimeChunks.Count} data rekap lembur.");
+        lines.Add("");
+        lines.Add("| No | Tanggal | Nama | Divisi | Durasi | Approval |");
+        lines.Add("|---|---|---|---|---|---|");
+
+        for (int i = 0; i < overtimeChunks.Count; i++)
+        {
+            var chunk = overtimeChunks[i];
+
+            var date = ValueOrFallback(chunk.Date, ChunkMetadataExtractor.ExtractDate(chunk.Content));
+            var name = ValueOrFallback(chunk.Name, ChunkMetadataExtractor.ExtractName(chunk.Content));
+            var division = ValueOrFallback(chunk.Division, ChunkMetadataExtractor.ExtractDivision(chunk.Content));
+            var duration = ValueOrFallback(chunk.Duration, ChunkMetadataExtractor.ExtractDuration(chunk.Content));
+            var approval = ValueOrFallback(chunk.Approval, ChunkMetadataExtractor.ExtractApproval(chunk.Content));
+
+            lines.Add($"| {i + 1} | {date} | {name} | {division} | {duration} | {approval} |");
+        }
+    }
+
+    private static void AppendMaintenanceAnswer(
+    List<string> lines,
+    List<RetrievedChunk> maintenanceChunks)
+    {
+        if (maintenanceChunks.Count == 1)
+        {
+            var chunk = maintenanceChunks.First();
+
+            lines.Add("Log Maintenance:");
+            lines.Add($@"- Kode: {ValueOrFallback(chunk.MaintenanceCode, ChunkMetadataExtractor.ExtractMaintenanceCode(chunk.Content))}
+  Peralatan: {ValueOrFallback(chunk.Equipment, ChunkMetadataExtractor.ExtractEquipment(chunk.Content))}
+  Lokasi: {ValueOrFallback(chunk.Location, ChunkMetadataExtractor.ExtractLocation(chunk.Content))}
+  Status: {ValueOrFallback(chunk.MaintenanceStatus, ChunkMetadataExtractor.ExtractMaintenanceStatus(chunk.Content))}
+  Teknisi: {ValueOrFallback(chunk.Technician, ChunkMetadataExtractor.ExtractTechnician(chunk.Content))}");
+
+            return;
+        }
+
+        lines.Add($"Ditemukan {maintenanceChunks.Count} data log maintenance.");
+        lines.Add("");
+        lines.Add("| No | Kode | Peralatan | Lokasi | Status | Teknisi |");
+        lines.Add("|---|---|---|---|---|---|");
+
+        for (int i = 0; i < maintenanceChunks.Count; i++)
+        {
+            var chunk = maintenanceChunks[i];
+
+            var code = ValueOrFallback(chunk.MaintenanceCode, ChunkMetadataExtractor.ExtractMaintenanceCode(chunk.Content));
+            var equipment = ValueOrFallback(chunk.Equipment, ChunkMetadataExtractor.ExtractEquipment(chunk.Content));
+            var location = ValueOrFallback(chunk.Location, ChunkMetadataExtractor.ExtractLocation(chunk.Content));
+            var status = ValueOrFallback(chunk.MaintenanceStatus, ChunkMetadataExtractor.ExtractMaintenanceStatus(chunk.Content));
+            var technician = ValueOrFallback(chunk.Technician, ChunkMetadataExtractor.ExtractTechnician(chunk.Content));
+
+            lines.Add($"| {i + 1} | {code} | {equipment} | {location} | {status} | {technician} |");
+        }
     }
 }
