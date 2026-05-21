@@ -534,96 +534,77 @@ public class QdrantService
 
     public static string ExtractNik(string content)
     {
-        var match = Regex.Match(content, @"\bRU\s*6\s*-?\s*\d{4}\b", RegexOptions.IgnoreCase);
-        return match.Success ? NormalizeNik(match.Value) : "";
+        return ChunkMetadataExtractor.ExtractNik(content);
     }
 
     public static string ExtractName(string content)
     {
-        var match = Regex.Match(content, @"(?im)^\s*Nama:\s*(.+?)\s*$");
-        return match.Success ? match.Groups[1].Value.Trim() : "";
+        return ChunkMetadataExtractor.ExtractName(content);
     }
 
     public static string ExtractMaintenanceCode(string content)
     {
-        var match = Regex.Match(content, @"\bMT\s*-?\s*\d{3}\b", RegexOptions.IgnoreCase);
-        return match.Success ? NormalizeMaintenanceCode(match.Value) : "";
+        return ChunkMetadataExtractor.ExtractMaintenanceCode(content);
     }
 
     public static string ExtractDate(string content)
     {
-        var match = Regex.Match(content, @"\b\d{2}-\d{2}-\d{4}\b");
-        return match.Success ? match.Value : "";
+        return ChunkMetadataExtractor.ExtractDate(content);
     }
 
     public static string ExtractDivision(string content)
     {
-        var match = Regex.Match(content, @"(?im)^\s*(?:Divisi|Division|Department):\s*(.+?)\s*$");
-        return match.Success ? match.Groups[1].Value.Trim() : "";
+        return ChunkMetadataExtractor.ExtractDivision(content);
     }
 
     public static string ExtractPosition(string content)
     {
-        return ExtractLineValue(content, "Jabatan");
+        return ChunkMetadataExtractor.ExtractPosition(content);
     }
 
     public static string ExtractShift(string content)
     {
-        return ExtractLineValue(content, "Shift");
+        return ChunkMetadataExtractor.ExtractShift(content);
     }
 
     public static string ExtractEmployeeStatus(string content)
     {
-        return DetectRecordType(content) == "employee"
-            ? ExtractLineValue(content, "Status")
-            : "";
+        return ChunkMetadataExtractor.ExtractEmployeeStatus(content);
     }
 
     public static string ExtractEquipment(string content)
     {
-        return ExtractLineValue(content, "Peralatan");
+        return ChunkMetadataExtractor.ExtractEquipment(content);
     }
 
     public static string ExtractLocation(string content)
     {
-        return ExtractLineValue(content, "Lokasi");
+        return ChunkMetadataExtractor.ExtractLocation(content);
     }
 
     public static string ExtractMaintenanceStatus(string content)
     {
-        return DetectRecordType(content) == "maintenance"
-            ? ExtractLineValue(content, "Status")
-            : "";
+        return ChunkMetadataExtractor.ExtractMaintenanceStatus(content);
     }
 
     public static string ExtractTechnician(string content)
     {
-        return ExtractLineValue(content, "Teknisi");
+        return ChunkMetadataExtractor.ExtractTechnician(content);
     }
 
     public static string ExtractDuration(string content)
     {
-        return ExtractLineValue(content, "Durasi");
+        return ChunkMetadataExtractor.ExtractDuration(content);
     }
 
     public static string ExtractApproval(string content)
     {
-        return ExtractLineValue(content, "Approval");
+        return ChunkMetadataExtractor.ExtractApproval(content);
     }
 
     public static string ExtractSectionTitle(string content)
     {
-        var match = Regex.Match(
-            content,
-            @"(?im)^\s*(?:\d+\.\s*)?(Profil Perusahaan|SOP Keamanan Area Kilang|Data Karyawan|Rekap Lembur|Log Maintenance|Catatan Audit dan Keamanan)\s*:?\s*$");
-
-        if (match.Success)
-            return match.Groups[1].Value.Trim();
-
-        if (content.Contains("SOP", StringComparison.OrdinalIgnoreCase))
-            return "SOP Keamanan Area Kilang";
-
-        return "";
+        return ChunkMetadataExtractor.ExtractSectionTitle(content);
     }
 
     public static string NormalizeNik(string nik)
