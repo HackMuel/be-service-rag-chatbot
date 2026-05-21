@@ -7,11 +7,14 @@ public static class RetrievedChunkMapper
 {
     public static RetrievedChunk Map(JsonElement item, float similarity)
     {
-        var payload = item.GetProperty("payload");
+        var payload = item.TryGetProperty("payload", out var payloadElement) &&
+                      payloadElement.ValueKind == JsonValueKind.Object
+            ? payloadElement
+            : default;
 
         return new RetrievedChunk
         {
-            Id = Guid.Parse(item.GetProperty("id").GetString()!),
+            Id = GetPointId(item),
             DocumentId = Guid.TryParse(GetPayloadString(payload, "documentId"), out var documentId)
                 ? documentId
                 : Guid.Empty,
@@ -41,6 +44,9 @@ public static class RetrievedChunkMapper
 
     public static string GetPayloadString(JsonElement payload, string propertyName)
     {
+        if (payload.ValueKind != JsonValueKind.Object)
+            return "";
+
         return payload.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString() ?? ""
             : "";
@@ -48,6 +54,9 @@ public static class RetrievedChunkMapper
 
     private static int? GetPayloadInt(JsonElement payload, string propertyName)
     {
+        if (payload.ValueKind != JsonValueKind.Object)
+            return null;
+
         if (!payload.TryGetProperty(propertyName, out var value) || value.ValueKind == JsonValueKind.Null)
             return null;
 
@@ -55,5 +64,14 @@ public static class RetrievedChunkMapper
             return intValue;
 
         return null;
+    }
+
+    private static Guid GetPointId(JsonElement item)
+    {
+        var id = item.GetProperty("id");
+
+        return id.ValueKind == JsonValueKind.String
+            ? Guid.Parse(id.GetString()!)
+            : Guid.Parse(id.GetRawText());
     }
 }

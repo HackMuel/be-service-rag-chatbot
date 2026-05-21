@@ -38,7 +38,7 @@ public class QdrantSearchClient
         {
             vector = queryEmbedding,
             limit,
-            with_payload = true
+            with_payload = false
         };
 
         var response = await _httpClient.PostAsync(

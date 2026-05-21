@@ -1,4 +1,5 @@
 using be_service.Models;
+using be_service.Repositories;
 
 namespace be_service.Services;
 
@@ -6,6 +7,7 @@ public class RetrievalService
 {
     private readonly QdrantService _qdrantService;
     private readonly OllamaService _ollamaService;
+    private readonly ChunkRepository _chunkRepository;
     private readonly ILogger<RetrievalService> _logger;
 
     private const float MinimumSemanticSimilarity = 0.50f;
@@ -13,10 +15,12 @@ public class RetrievalService
     public RetrievalService(
         QdrantService qdrantService,
         OllamaService ollamaService,
+        ChunkRepository chunkRepository,
         ILogger<RetrievalService> logger)
     {
         _qdrantService = qdrantService;
         _ollamaService = ollamaService;
+        _chunkRepository = chunkRepository;
         _logger = logger;
     }
 
@@ -176,11 +180,13 @@ public class RetrievalService
         {
             var embedding = await _ollamaService.GenerateEmbeddingAsync(analysis.Question);
 
-            chunks = await _qdrantService.SearchSemanticAsync(embedding, 5);
+            var vectorHits = await _qdrantService.SearchSemanticAsync(embedding, 5);
 
-            chunks = chunks
+            vectorHits = vectorHits
                 .Where(x => x.Similarity >= MinimumSemanticSimilarity)
                 .ToList();
+
+            chunks = await GetSemanticChunksFromRepositoryAsync(vectorHits);
 
             retrievalMode = "semantic";
             contextLimit = 5;
@@ -205,5 +211,43 @@ public class RetrievalService
             RetrievalMode = retrievalMode,
             ContextLimit = contextLimit
         };
+    }
+
+    private async Task<List<RetrievedChunk>> GetSemanticChunksFromRepositoryAsync(
+        List<RetrievedChunk> vectorHits)
+    {
+        if (!vectorHits.Any())
+        {
+            return new List<RetrievedChunk>();
+        }
+
+        var ids = vectorHits
+            .Select(x => x.Id)
+            .Where(x => x != Guid.Empty)
+            .ToList();
+
+        if (!ids.Any())
+        {
+            return new List<RetrievedChunk>();
+        }
+
+        var scoreMap = vectorHits
+            .Where(x => x.Id != Guid.Empty)
+            .GroupBy(x => x.Id)
+            .ToDictionary(x => x.Key, x => x.First().Similarity);
+
+        var dbChunks = await _chunkRepository.GetChunksByIdsAsync(ids);
+
+        foreach (var chunk in dbChunks)
+        {
+            if (scoreMap.TryGetValue(chunk.Id, out var score))
+            {
+                chunk.Similarity = score;
+            }
+        }
+
+        return dbChunks
+            .Where(x => scoreMap.ContainsKey(x.Id))
+            .ToList();
     }
 }

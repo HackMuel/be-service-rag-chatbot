@@ -221,6 +221,66 @@ public class ChunkRepository
         }, limit);
     }
 
+    public async Task<List<RetrievedChunk>> SearchByRecordTypeAsync(
+        string recordType,
+        string keyword,
+        int limit = 10)
+    {
+        if (string.IsNullOrWhiteSpace(recordType))
+        {
+            return new List<RetrievedChunk>();
+        }
+
+        await using var conn = await OpenConnectionAsync();
+
+        const string sqlWithoutKeyword = @"
+            select
+                dc.id,
+                dc.document_id,
+                dc.chunk_index,
+                dc.content,
+                dc.metadata,
+                coalesce(dc.metadata->>'documentTitle', d.title, '') as document_title,
+                1.0::real as similarity
+            from document_chunks dc
+            left join documents d on d.id = dc.document_id
+            where dc.metadata->>'recordType' = @recordType
+            order by dc.chunk_index asc
+            limit @limit;
+        ";
+
+        const string sqlWithKeyword = @"
+            select
+                dc.id,
+                dc.document_id,
+                dc.chunk_index,
+                dc.content,
+                dc.metadata,
+                coalesce(dc.metadata->>'documentTitle', d.title, '') as document_title,
+                1.0::real as similarity
+            from document_chunks dc
+            left join documents d on d.id = dc.document_id
+            where dc.metadata->>'recordType' = @recordType
+              and dc.content ilike @keyword
+            order by dc.chunk_index asc
+            limit @limit;
+        ";
+
+        var hasKeyword = !string.IsNullOrWhiteSpace(keyword);
+        var sql = hasKeyword ? sqlWithKeyword : sqlWithoutKeyword;
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.Add("recordType", NpgsqlDbType.Text).Value = recordType.Trim().ToLowerInvariant();
+        cmd.Parameters.Add("limit", NpgsqlDbType.Integer).Value = limit;
+
+        if (hasKeyword)
+        {
+            cmd.Parameters.Add("keyword", NpgsqlDbType.Text).Value = $"%{keyword.Trim()}%";
+        }
+
+        return await ReadChunksAsync(cmd);
+    }
+
     private async Task<List<RetrievedChunk>> SearchByMetadataAsync(
         Dictionary<string, string> filters,
         int limit)
