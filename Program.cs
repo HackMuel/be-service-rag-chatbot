@@ -3,6 +3,11 @@ using be_service.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+builder.Services.AddSingleton<QdrantCollectionService>();
+builder.Services.AddSingleton<QdrantPointWriter>();
+builder.Services.AddSingleton<QdrantSearchClient>();
+builder.Services.AddSingleton<QdrantFilterBuilder>();
+builder.Services.AddSingleton<QdrantScrollClient>();
 builder.Services.AddSingleton<QdrantService>();
 builder.Services.AddHttpClient<OllamaService>();
 builder.Services.AddControllers();
@@ -10,7 +15,12 @@ builder.Services.AddScoped<IngestionService>();
 builder.Services.AddSingleton<QueryAnalyzerService>();
 builder.Services.AddSingleton<AnswerFormatterService>();
 builder.Services.AddSingleton<PromptBuilderService>();
-builder.Services.AddSingleton<RetrievalService>();
+builder.Services.AddScoped<RetrievalService>();
+builder.Services.AddScoped<PdfTextExtractor>();
+builder.Services.AddScoped<TextNormalizer>();
+builder.Services.AddScoped<ChunkingService>();
+builder.Services.AddScoped<EmbeddingIngestionService>();
+builder.Services.AddScoped<DocumentIngestionOrchestrator>();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddScoped<RagChatService>();

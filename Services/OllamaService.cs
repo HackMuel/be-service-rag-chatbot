@@ -6,10 +6,14 @@ namespace be_service.Services;
 public class OllamaService
 {
     private readonly HttpClient _httpClient;
+    private readonly ILogger<OllamaService> _logger;
 
-    public OllamaService(HttpClient httpClient)
+    public OllamaService(
+        HttpClient httpClient,
+        ILogger<OllamaService> logger)
     {
         _httpClient = httpClient;
+        _logger = logger;
     }
 
     public async Task<List<float>> GenerateEmbeddingAsync(string text)
@@ -28,7 +32,7 @@ public class OllamaService
                 "application/json")
         );
 
-        response.EnsureSuccessStatusCode();
+        await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Ollama embedding");
 
         var json = await response.Content.ReadAsStringAsync();
 
@@ -58,7 +62,7 @@ public class OllamaService
                 "application/json")
         );
 
-        response.EnsureSuccessStatusCode();
+        await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Ollama generation");
 
         var json = await response.Content.ReadAsStringAsync();
 

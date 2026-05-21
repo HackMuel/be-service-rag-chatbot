@@ -26,6 +26,13 @@ public class RetrievalService
         var retrievalMode = "semantic";
         var contextLimit = 5;
 
+        /*
+         * Routing order matters:
+         * Before: SOP was checked before Audit, so queries such as "kepatuhan APD"
+         * could be routed to SOP because APD is also a SOP keyword.
+         * After: Audit is checked before SOP because audit/compliance queries are
+         * more specific than broad SOP/security queries.
+         */
         if (!string.IsNullOrWhiteSpace(analysis.Nik))
         {
             chunks = await _qdrantService.SearchByNikAsync(analysis.Nik);
@@ -43,6 +50,16 @@ public class RetrievalService
             chunks = await _qdrantService.SearchByDateAsync(analysis.Date);
             retrievalMode = "exact-date";
             contextLimit = 10;
+        }
+        else if (analysis.IsAuditQuery)
+        {
+            chunks = await _qdrantService.SearchByRecordTypeAsync(
+                "audit",
+                "",
+                3);
+
+            retrievalMode = "audit";
+            contextLimit = 3;
         }
         else if (analysis.IsSopQuery)
         {
@@ -71,16 +88,6 @@ public class RetrievalService
 
             retrievalMode = "profile";
             contextLimit = 5;
-        }
-        else if (analysis.IsAuditQuery)
-        {
-            chunks = await _qdrantService.SearchByRecordTypeAsync(
-                "audit",
-                "",
-                3);
-
-            retrievalMode = "audit";
-            contextLimit = 3;
         }
         else
         {

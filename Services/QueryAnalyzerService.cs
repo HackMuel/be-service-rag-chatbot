@@ -103,6 +103,11 @@ public class QueryAnalyzerService
         return ContainsAny(
             question,
             "audit",
+            "kepatuhan",
+            "apd",
+            "inspeksi",
+            "temuan",
+            "non-konformitas",
             "backup",
             "server",
             "logbook",

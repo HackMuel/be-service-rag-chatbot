@@ -6,16 +6,30 @@ public static class ChunkMetadataExtractor
 {
     public static string NormalizeNik(string value)
     {
-        return Regex.Replace(value, @"\s+", "")
-            .Replace("RU6", "RU6")
-            .ToUpperInvariant();
+        var normalized = Regex.Replace(value, @"\s+", "").ToUpperInvariant();
+
+        if (normalized.Contains('-'))
+            return normalized;
+
+        var match = Regex.Match(normalized, @"^([A-Z]+[0-9])([0-9]+)$");
+
+        return match.Success
+            ? $"{match.Groups[1].Value}-{match.Groups[2].Value}"
+            : normalized;
     }
 
     public static string NormalizeMaintenanceCode(string value)
     {
-        return Regex.Replace(value, @"\s+", "")
-            .Replace("MT", "MT")
-            .ToUpperInvariant();
+        var normalized = Regex.Replace(value, @"\s+", "").ToUpperInvariant();
+
+        if (normalized.Contains('-'))
+            return normalized;
+
+        var match = Regex.Match(normalized, @"^([A-Z]{2,4})([0-9]+)$");
+
+        return match.Success
+            ? $"{match.Groups[1].Value}-{match.Groups[2].Value}"
+            : normalized;
     }
 
     public static string DetectRecordType(string content)
