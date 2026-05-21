@@ -34,11 +34,11 @@ public class QueryAnalyzerService
             Question = question,
 
             Nik = nikMatch.Success
-                ? QdrantService.NormalizeNik(nikMatch.Value)
+                ? ChunkMetadataExtractor.NormalizeNik(nikMatch.Value)
                 : string.Empty,
 
             MaintenanceCode = maintenanceMatch.Success
-                ? QdrantService.NormalizeMaintenanceCode(maintenanceMatch.Value)
+                ? ChunkMetadataExtractor.NormalizeMaintenanceCode(maintenanceMatch.Value)
                 : string.Empty,
 
             Date = dateMatch.Success ? dateMatch.Value : string.Empty,

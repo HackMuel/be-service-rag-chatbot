@@ -52,7 +52,7 @@ JAWABAN:
                 $@"[Sumber {index + 1}]
 DocumentTitle: {x.DocumentTitle}
 RecordType: {ResolveRecordType(x)}
-SectionTitle: {ValueOrFallback(x.SectionTitle, QdrantService.ExtractSectionTitle(x.Content))}
+SectionTitle: {ValueOrFallback(x.SectionTitle, ChunkMetadataExtractor.ExtractSectionTitle(x.Content))}
 Similarity: {x.Similarity:F2}
 ChunkIndex: {(x.ChunkIndex.HasValue ? x.ChunkIndex.Value.ToString() : "-")}
 Content:
@@ -63,7 +63,7 @@ Content:
     private static string ResolveRecordType(RetrievedChunk chunk)
     {
         return string.IsNullOrWhiteSpace(chunk.RecordType)
-            ? QdrantService.DetectRecordType(chunk.Content)
+            ? ChunkMetadataExtractor.DetectRecordType(chunk.Content)
             : chunk.RecordType;
     }
 

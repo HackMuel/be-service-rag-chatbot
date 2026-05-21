@@ -103,22 +103,22 @@ public class QdrantService
         int chunkIndex = -1,
         string department = "")
     {
-        var recordType = DetectRecordType(content);
-        var nik = ExtractNik(content);
-        var name = ExtractName(content);
-        var maintenanceCode = ExtractMaintenanceCode(content);
-        var date = ExtractDate(content);
-        var division = ExtractDivision(content);
-        var position = ExtractPosition(content);
-        var shift = ExtractShift(content);
-        var employeeStatus = ExtractEmployeeStatus(content);
-        var duration = ExtractDuration(content);
-        var approval = ExtractApproval(content);
-        var equipment = ExtractEquipment(content);
-        var location = ExtractLocation(content);
-        var maintenanceStatus = ExtractMaintenanceStatus(content);
-        var technician = ExtractTechnician(content);
-        var sectionTitle = ExtractSectionTitle(content);
+        var recordType = ChunkMetadataExtractor.DetectRecordType(content);
+        var nik = ChunkMetadataExtractor.ExtractNik(content);
+        var name = ChunkMetadataExtractor.ExtractName(content);
+        var maintenanceCode = ChunkMetadataExtractor.ExtractMaintenanceCode(content);
+        var date = ChunkMetadataExtractor.ExtractDate(content);
+        var division = ChunkMetadataExtractor.ExtractDivision(content);
+        var position = ChunkMetadataExtractor.ExtractPosition(content);
+        var shift = ChunkMetadataExtractor.ExtractShift(content);
+        var employeeStatus = ChunkMetadataExtractor.ExtractEmployeeStatus(content);
+        var duration = ChunkMetadataExtractor.ExtractDuration(content);
+        var approval = ChunkMetadataExtractor.ExtractApproval(content);
+        var equipment = ChunkMetadataExtractor.ExtractEquipment(content);
+        var location = ChunkMetadataExtractor.ExtractLocation(content);
+        var maintenanceStatus = ChunkMetadataExtractor.ExtractMaintenanceStatus(content);
+        var technician = ChunkMetadataExtractor.ExtractTechnician(content);
+        var sectionTitle = ChunkMetadataExtractor.ExtractSectionTitle(content);
 
         var body = new
         {
@@ -207,12 +207,14 @@ public class QdrantService
 
     public async Task<List<RetrievedChunk>> SearchByNikAsync(string nik)
     {
-        return await SearchByPayloadMatchAsync("nik", NormalizeNik(nik), 5);
+        return await SearchByPayloadMatchAsync("nik", 
+        ChunkMetadataExtractor.NormalizeNik(nik), 5);
     }
 
     public async Task<List<RetrievedChunk>> SearchByMaintenanceCodeAsync(string code)
     {
-        return await SearchByPayloadMatchAsync("maintenanceCode", NormalizeMaintenanceCode(code), 5);
+        return await SearchByPayloadMatchAsync("maintenanceCode", 
+        ChunkMetadataExtractor.NormalizeMaintenanceCode(code), 5);
     }
 
     public async Task<List<RetrievedChunk>> SearchByDateAsync(string date)
@@ -503,126 +505,6 @@ public class QdrantService
         return results;
     }
 
-    public static string DetectRecordType(string content)
-    {
-        if (content.Contains("Profil Perusahaan", StringComparison.OrdinalIgnoreCase))
-            return "profile";
-
-        if (content.Contains("Data Karyawan:", StringComparison.OrdinalIgnoreCase))
-            return "employee";
-
-        if (content.Contains("Rekap Lembur:", StringComparison.OrdinalIgnoreCase))
-            return "overtime";
-
-        if (content.Contains("Log Maintenance:", StringComparison.OrdinalIgnoreCase))
-            return "maintenance";
-
-        if (content.Contains("SOP", StringComparison.OrdinalIgnoreCase) ||
-            content.Contains("Keamanan Area Kilang", StringComparison.OrdinalIgnoreCase) ||
-            content.Contains("APD", StringComparison.OrdinalIgnoreCase))
-            return "sop";
-        if (content.Contains("Catatan Audit", StringComparison.OrdinalIgnoreCase) ||
-            content.Contains("Audit internal", StringComparison.OrdinalIgnoreCase) ||
-            content.Contains("backup otomatis", StringComparison.OrdinalIgnoreCase) ||
-            content.Contains("logbook digital", StringComparison.OrdinalIgnoreCase))
-        {
-            return "audit";
-        }
-
-        return "document";
-    }
-
-    public static string ExtractNik(string content)
-    {
-        return ChunkMetadataExtractor.ExtractNik(content);
-    }
-
-    public static string ExtractName(string content)
-    {
-        return ChunkMetadataExtractor.ExtractName(content);
-    }
-
-    public static string ExtractMaintenanceCode(string content)
-    {
-        return ChunkMetadataExtractor.ExtractMaintenanceCode(content);
-    }
-
-    public static string ExtractDate(string content)
-    {
-        return ChunkMetadataExtractor.ExtractDate(content);
-    }
-
-    public static string ExtractDivision(string content)
-    {
-        return ChunkMetadataExtractor.ExtractDivision(content);
-    }
-
-    public static string ExtractPosition(string content)
-    {
-        return ChunkMetadataExtractor.ExtractPosition(content);
-    }
-
-    public static string ExtractShift(string content)
-    {
-        return ChunkMetadataExtractor.ExtractShift(content);
-    }
-
-    public static string ExtractEmployeeStatus(string content)
-    {
-        return ChunkMetadataExtractor.ExtractEmployeeStatus(content);
-    }
-
-    public static string ExtractEquipment(string content)
-    {
-        return ChunkMetadataExtractor.ExtractEquipment(content);
-    }
-
-    public static string ExtractLocation(string content)
-    {
-        return ChunkMetadataExtractor.ExtractLocation(content);
-    }
-
-    public static string ExtractMaintenanceStatus(string content)
-    {
-        return ChunkMetadataExtractor.ExtractMaintenanceStatus(content);
-    }
-
-    public static string ExtractTechnician(string content)
-    {
-        return ChunkMetadataExtractor.ExtractTechnician(content);
-    }
-
-    public static string ExtractDuration(string content)
-    {
-        return ChunkMetadataExtractor.ExtractDuration(content);
-    }
-
-    public static string ExtractApproval(string content)
-    {
-        return ChunkMetadataExtractor.ExtractApproval(content);
-    }
-
-    public static string ExtractSectionTitle(string content)
-    {
-        return ChunkMetadataExtractor.ExtractSectionTitle(content);
-    }
-
-    public static string NormalizeNik(string nik)
-    {
-        var match = Regex.Match(nik, @"RU\s*6\s*-?\s*(\d{4})", RegexOptions.IgnoreCase);
-        return match.Success
-            ? $"RU6-{match.Groups[1].Value}"
-            : Regex.Replace(nik, @"\s+", "").ToUpperInvariant();
-    }
-
-    public static string NormalizeMaintenanceCode(string code)
-    {
-        var match = Regex.Match(code, @"MT\s*-?\s*(\d{3})", RegexOptions.IgnoreCase);
-        return match.Success
-            ? $"MT-{match.Groups[1].Value}"
-            : Regex.Replace(code, @"\s+", "").ToUpperInvariant();
-    }
-
     public static string NormalizeKeyword(string value)
     {
         return Regex.Replace(value.Trim(), @"\s+", " ").ToUpperInvariant();
@@ -631,15 +513,6 @@ public class QdrantService
     private static string NormalizeRecordType(string recordType)
     {
         return recordType.Trim().ToLowerInvariant();
-    }
-
-    private static string ExtractLineValue(string content, string label)
-    {
-        var match = Regex.Match(
-            content,
-            $@"(?im)^\s*{Regex.Escape(label)}:\s*(.+?)\s*$");
-
-        return match.Success ? match.Groups[1].Value.Trim() : "";
     }
 
     private static bool MatchesKeyword(string content, string keyword)

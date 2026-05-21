@@ -508,7 +508,7 @@ public class RagChatService
     private static string ResolveRecordType(RetrievedChunk chunk)
     {
         return string.IsNullOrWhiteSpace(chunk.RecordType)
-            ? QdrantService.DetectRecordType(chunk.Content)
+            ? ChunkMetadataExtractor.DetectRecordType(chunk.Content)
             : chunk.RecordType;
     }
 

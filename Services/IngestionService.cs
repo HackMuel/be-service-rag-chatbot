@@ -77,7 +77,7 @@ public class IngestionService
         for (int i = 0; i < chunks.Count; i++)
         {
             Console.WriteLine(
-                $"CHUNK {i}: type={QdrantService.DetectRecordType(chunks[i])}, length={chunks[i].Length}");
+                $"CHUNK {i}: type={ChunkMetadataExtractor.DetectRecordType(chunks[i])}, length={chunks[i].Length}");
         }
 
         for (int i = 0; i < chunks.Count; i++)

@@ -47,12 +47,12 @@ public class AnswerFormatterService
 
             foreach (var chunk in employeeChunks)
             {
-                lines.Add($@"- NIK: {ValueOrFallback(chunk.Nik, QdrantService.ExtractNik(chunk.Content))}
-  Nama: {ValueOrFallback(chunk.Name, QdrantService.ExtractName(chunk.Content))}
-  Divisi: {ValueOrFallback(chunk.Division, QdrantService.ExtractDivision(chunk.Content))}
-  Jabatan: {ValueOrFallback(chunk.Position, QdrantService.ExtractPosition(chunk.Content))}
-  Shift: {ValueOrFallback(chunk.Shift, QdrantService.ExtractShift(chunk.Content))}
-  Status: {ValueOrFallback(chunk.EmployeeStatus, QdrantService.ExtractEmployeeStatus(chunk.Content))}");
+                lines.Add($@"- NIK: {ValueOrFallback(chunk.Nik, ChunkMetadataExtractor.ExtractNik(chunk.Content))}
+  Nama: {ValueOrFallback(chunk.Name, ChunkMetadataExtractor.ExtractName(chunk.Content))}
+  Divisi: {ValueOrFallback(chunk.Division, ChunkMetadataExtractor.ExtractDivision(chunk.Content))}
+  Jabatan: {ValueOrFallback(chunk.Position, ChunkMetadataExtractor.ExtractPosition(chunk.Content))}
+  Shift: {ValueOrFallback(chunk.Shift, ChunkMetadataExtractor.ExtractShift(chunk.Content))}
+  Status: {ValueOrFallback(chunk.EmployeeStatus, ChunkMetadataExtractor.ExtractEmployeeStatus(chunk.Content))}");
             }
         }
 
@@ -69,11 +69,11 @@ public class AnswerFormatterService
 
             foreach (var chunk in overtimeChunks)
             {
-                lines.Add($@"- Tanggal: {ValueOrFallback(chunk.Date, QdrantService.ExtractDate(chunk.Content))}
-  Nama: {ValueOrFallback(chunk.Name, QdrantService.ExtractName(chunk.Content))}
-  Divisi: {ValueOrFallback(chunk.Division, QdrantService.ExtractDivision(chunk.Content))}
-  Durasi: {ValueOrFallback(chunk.Duration, QdrantService.ExtractDuration(chunk.Content))}
-  Approval: {ValueOrFallback(chunk.Approval, QdrantService.ExtractApproval(chunk.Content))}");
+                lines.Add($@"- Tanggal: {ValueOrFallback(chunk.Date, ChunkMetadataExtractor.ExtractDate(chunk.Content))}
+  Nama: {ValueOrFallback(chunk.Name, ChunkMetadataExtractor.ExtractName(chunk.Content))}
+  Divisi: {ValueOrFallback(chunk.Division, ChunkMetadataExtractor.ExtractDivision(chunk.Content))}
+  Durasi: {ValueOrFallback(chunk.Duration, ChunkMetadataExtractor.ExtractDuration(chunk.Content))}
+  Approval: {ValueOrFallback(chunk.Approval, ChunkMetadataExtractor.ExtractApproval(chunk.Content))}");
             }
         }
 
@@ -90,11 +90,11 @@ public class AnswerFormatterService
 
             foreach (var chunk in maintenanceChunks)
             {
-                lines.Add($@"- Kode: {ValueOrFallback(chunk.MaintenanceCode, QdrantService.ExtractMaintenanceCode(chunk.Content))}
-  Peralatan: {ValueOrFallback(chunk.Equipment, QdrantService.ExtractEquipment(chunk.Content))}
-  Lokasi: {ValueOrFallback(chunk.Location, QdrantService.ExtractLocation(chunk.Content))}
-  Status: {ValueOrFallback(chunk.MaintenanceStatus, QdrantService.ExtractMaintenanceStatus(chunk.Content))}
-  Teknisi: {ValueOrFallback(chunk.Technician, QdrantService.ExtractTechnician(chunk.Content))}");
+                lines.Add($@"- Kode: {ValueOrFallback(chunk.MaintenanceCode, ChunkMetadataExtractor.ExtractMaintenanceCode(chunk.Content))}
+  Peralatan: {ValueOrFallback(chunk.Equipment, ChunkMetadataExtractor.ExtractEquipment(chunk.Content))}
+  Lokasi: {ValueOrFallback(chunk.Location, ChunkMetadataExtractor.ExtractLocation(chunk.Content))}
+  Status: {ValueOrFallback(chunk.MaintenanceStatus, ChunkMetadataExtractor.ExtractMaintenanceStatus(chunk.Content))}
+  Teknisi: {ValueOrFallback(chunk.Technician, ChunkMetadataExtractor.ExtractTechnician(chunk.Content))}");
             }
         }
 
@@ -143,23 +143,23 @@ public class AnswerFormatterService
     {
         var code = ValueOrFallback(
             chunk.MaintenanceCode,
-            QdrantService.ExtractMaintenanceCode(chunk.Content));
+            ChunkMetadataExtractor.ExtractMaintenanceCode(chunk.Content));
 
         var equipment = ValueOrFallback(
             chunk.Equipment,
-            QdrantService.ExtractEquipment(chunk.Content));
+            ChunkMetadataExtractor.ExtractEquipment(chunk.Content));
 
         var location = ValueOrFallback(
             chunk.Location,
-            QdrantService.ExtractLocation(chunk.Content));
+            ChunkMetadataExtractor.ExtractLocation(chunk.Content));
 
         var status = ValueOrFallback(
             chunk.MaintenanceStatus,
-            QdrantService.ExtractMaintenanceStatus(chunk.Content));
+            ChunkMetadataExtractor.ExtractMaintenanceStatus(chunk.Content));
 
         var technician = ValueOrFallback(
             chunk.Technician,
-            QdrantService.ExtractTechnician(chunk.Content));
+            ChunkMetadataExtractor.ExtractTechnician(chunk.Content));
 
         if (ContainsAny(question, "teknisi"))
             return $"Teknisi untuk {code} adalah {technician}.";
@@ -204,7 +204,7 @@ public class AnswerFormatterService
     private static string ResolveRecordType(RetrievedChunk chunk)
     {
         return string.IsNullOrWhiteSpace(chunk.RecordType)
-            ? QdrantService.DetectRecordType(chunk.Content)
+            ? ChunkMetadataExtractor.DetectRecordType(chunk.Content)
             : chunk.RecordType;
     }
 
