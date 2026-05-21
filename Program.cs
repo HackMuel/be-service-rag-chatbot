@@ -1,4 +1,5 @@
 using be_service.Models;
+using be_service.Repositories;
 using be_service.Services;
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,6 +22,7 @@ builder.Services.AddScoped<TextNormalizer>();
 builder.Services.AddScoped<ChunkingService>();
 builder.Services.AddScoped<EmbeddingIngestionService>();
 builder.Services.AddScoped<DocumentIngestionOrchestrator>();
+builder.Services.AddScoped<ChunkRepository>();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddScoped<RagChatService>();
