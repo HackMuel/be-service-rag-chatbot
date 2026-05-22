@@ -36,28 +36,28 @@ public class RetrievalService
          * could be routed to SOP because APD is also a SOP keyword.
          * After: Audit is checked before SOP because audit/compliance queries are
          * more specific than broad SOP/security queries.
-         */
+        */
         if (!string.IsNullOrWhiteSpace(analysis.Nik))
         {
-            chunks = await _qdrantService.SearchByNikAsync(analysis.Nik);
+            chunks = await _chunkRepository.SearchByNikAsync(analysis.Nik);
             retrievalMode = "exact-nik";
             contextLimit = 1;
         }
         else if (!string.IsNullOrWhiteSpace(analysis.MaintenanceCode))
         {
-            chunks = await _qdrantService.SearchByMaintenanceCodeAsync(analysis.MaintenanceCode);
+            chunks = await _chunkRepository.SearchByMaintenanceCodeAsync(analysis.MaintenanceCode);
             retrievalMode = "exact-maintenance-code";
             contextLimit = 1;
         }
         else if (!string.IsNullOrWhiteSpace(analysis.Date))
         {
-            chunks = await _qdrantService.SearchByDateAsync(analysis.Date);
+            chunks = await _chunkRepository.SearchByDateAsync(analysis.Date);
             retrievalMode = "exact-date";
             contextLimit = 10;
         }
         else if (analysis.IsAuditQuery)
         {
-            chunks = await _qdrantService.SearchByRecordTypeAsync(
+            chunks = await _chunkRepository.SearchByRecordTypeAsync(
                 "audit",
                 "",
                 3);
@@ -67,7 +67,7 @@ public class RetrievalService
         }
         else if (analysis.IsSopQuery)
         {
-            chunks = await _qdrantService.SearchByRecordTypeAsync(
+            chunks = await _chunkRepository.SearchByRecordTypeAsync(
                 "sop",
                 analysis.SopKeyword,
                 5);
@@ -77,14 +77,14 @@ public class RetrievalService
         }
         else if (analysis.IsProfileQuery)
         {
-            chunks = await _qdrantService.SearchByRecordTypeAsync(
+            chunks = await _chunkRepository.SearchByRecordTypeAsync(
                 "profile",
                 analysis.ProfileKeyword,
                 5);
 
             if (!chunks.Any() && !string.IsNullOrWhiteSpace(analysis.ProfileKeyword))
             {
-                chunks = await _qdrantService.SearchByRecordTypeAsync(
+                chunks = await _chunkRepository.SearchByRecordTypeAsync(
                     "profile",
                     "",
                     5);
@@ -97,50 +97,50 @@ public class RetrievalService
         {
             if (analysis.IsEmployeeQuery && !string.IsNullOrWhiteSpace(analysis.Division))
             {
-                chunks = await _qdrantService.SearchEmployeesByDivisionAsync(analysis.Division);
+                chunks = await _chunkRepository.SearchEmployeesByDivisionAsync(analysis.Division);
                 retrievalMode = "employee_by_division";
                 contextLimit = 50;
             }
             else if (analysis.IsEmployeeQuery && !string.IsNullOrWhiteSpace(analysis.Shift))
             {
-                chunks = await _qdrantService.SearchEmployeesByShiftAsync(analysis.Shift);
+                chunks = await _chunkRepository.SearchEmployeesByShiftAsync(analysis.Shift);
                 retrievalMode = "employee_by_shift";
                 contextLimit = 50;
             }
             else if (analysis.IsEmployeeQuery && !string.IsNullOrWhiteSpace(analysis.EmployeeStatus))
             {
-                chunks = await _qdrantService.SearchEmployeesByStatusAsync(analysis.EmployeeStatus);
+                chunks = await _chunkRepository.SearchEmployeesByStatusAsync(analysis.EmployeeStatus);
                 retrievalMode = "employee_by_status";
                 contextLimit = 50;
             }
             else if (analysis.IsEmployeeQuery && !string.IsNullOrWhiteSpace(analysis.Position))
             {
-                chunks = await _qdrantService.SearchEmployeesByPositionAsync(analysis.Position);
+                chunks = await _chunkRepository.SearchEmployeesByPositionAsync(analysis.Position);
                 retrievalMode = "employee_by_position";
                 contextLimit = 50;
             }
             else if ((analysis.IsOvertimeQuery || analysis.Question.Contains("approval", StringComparison.OrdinalIgnoreCase)) &&
                      !string.IsNullOrWhiteSpace(analysis.Approval))
             {
-                chunks = await _qdrantService.SearchOvertimeByApprovalAsync(analysis.Approval);
+                chunks = await _chunkRepository.SearchOvertimeByApprovalAsync(analysis.Approval);
                 retrievalMode = "overtime_by_approval";
                 contextLimit = 50;
             }
             else if (analysis.IsOvertimeQuery && !string.IsNullOrWhiteSpace(analysis.Division))
             {
-                chunks = await _qdrantService.SearchOvertimeByDivisionAsync(analysis.Division);
+                chunks = await _chunkRepository.SearchOvertimeByDivisionAsync(analysis.Division);
                 retrievalMode = "overtime_by_division";
                 contextLimit = 50;
             }
             else if (analysis.IsMaintenanceQuery && !string.IsNullOrWhiteSpace(analysis.MaintenanceStatus))
             {
-                chunks = await _qdrantService.SearchMaintenanceByStatusAsync(analysis.MaintenanceStatus);
+                chunks = await _chunkRepository.SearchMaintenanceByStatusAsync(analysis.MaintenanceStatus);
                 retrievalMode = "maintenance_by_status";
                 contextLimit = 50;
             }
             else if (analysis.IsMaintenanceQuery && !string.IsNullOrWhiteSpace(analysis.Location))
             {
-                chunks = await _qdrantService.SearchMaintenanceByLocationAsync(analysis.Location);
+                chunks = await _chunkRepository.SearchMaintenanceByLocationAsync(analysis.Location);
                 retrievalMode = "maintenance_by_location";
                 contextLimit = 50;
             }
@@ -148,7 +148,7 @@ public class RetrievalService
                      analysis.Question.Contains("teknisi", StringComparison.OrdinalIgnoreCase) &&
                      !string.IsNullOrWhiteSpace(analysis.Technician))
             {
-                chunks = await _qdrantService.SearchMaintenanceByTechnicianAsync(analysis.Technician);
+                chunks = await _chunkRepository.SearchMaintenanceByTechnicianAsync(analysis.Technician);
                 retrievalMode = "maintenance_by_technician";
                 contextLimit = 50;
             }
@@ -156,7 +156,7 @@ public class RetrievalService
             {
                 if (analysis.IsOvertimeQuery)
                 {
-                    chunks = await _qdrantService.SearchOvertimeByNameAsync(
+                    chunks = await _chunkRepository.SearchOvertimeByNameAsync(
                         analysis.PersonKeyword,
                         10);
 
@@ -165,7 +165,7 @@ public class RetrievalService
 
                 if (!chunks.Any())
                 {
-                    chunks = await _qdrantService.SearchByNameAsync(
+                    chunks = await _chunkRepository.SearchByNameAsync(
                         analysis.PersonKeyword,
                         10);
 

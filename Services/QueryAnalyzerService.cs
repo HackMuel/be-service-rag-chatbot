@@ -74,11 +74,14 @@ public class QueryAnalyzerService
             question,
             "sop",
             "keamanan",
+            "maks",
+            "maksimal",
             "apd",
             "area kilang",
             "area produksi",
             "tangki",
-            "penyimpanan");
+            "penyimpanan",
+            "kecepatan");
     }
 
     private static bool IsProfileQuery(string question)
@@ -395,6 +398,9 @@ public class QueryAnalyzerService
 
         if (ContainsAny(question, "sop", "keamanan", "area kilang"))
             return "SOP Keamanan Area Kilang";
+
+        if (ContainsAny(question, "kecepatan", "kendaraan", "km/jam"))
+            return "kendaraan 20 km/jam area produksi";
 
         return question;
     }

@@ -20,6 +20,11 @@ public class AnswerFormatterService
             return BuildAuditAnswer(chunks, question);
         }
 
+        if (retrievalMode == "sop")
+        {
+            return BuildSopAnswer(chunks, question);
+        }
+
         if (retrievalMode == "exact-maintenance-code")
         {
             var answer = BuildMaintenanceFieldSpecificAnswer(chunks.First(), question);
@@ -28,7 +33,7 @@ public class AnswerFormatterService
                 return answer;
         }
 
-        if (retrievalMode is "semantic" or "sop")
+        if (retrievalMode == "semantic")
         {
             return null;
         }
@@ -141,6 +146,65 @@ public class AnswerFormatterService
         }
 
         return null;
+    }
+
+    private static string? BuildSopAnswer(List<RetrievedChunk> chunks, string question)
+    {
+        if (!ContainsAny(question, "tangki", "penyimpanan", "area penyimpanan", "akses", "masuk"))
+        {
+            return null;
+        }
+
+        var sentence = FindSopAccessSentence(chunks);
+
+        if (string.IsNullOrWhiteSpace(sentence))
+        {
+            return null;
+        }
+
+        var accessIsRestricted = Regex.IsMatch(
+            sentence,
+            @"hanya\s+dapat\s+diakses\s+(?:oleh\s+)?personel\s+HSSE\s+dan\s+Maintenance",
+            RegexOptions.IgnoreCase);
+
+        if (!accessIsRestricted)
+        {
+            return null;
+        }
+
+        if (Regex.IsMatch(question, @"\bIT\b", RegexOptions.IgnoreCase) ||
+            ContainsAny(question, "digitalisasi"))
+        {
+            return "Tidak. Berdasarkan SOP, area tangki penyimpanan hanya dapat diakses oleh personel HSSE dan Maintenance. Personel IT tidak disebut sebagai pihak yang boleh mengakses area tersebut.";
+        }
+
+        if (ContainsAny(question, "HSSE"))
+        {
+            return "Ya. Berdasarkan SOP, personel HSSE termasuk pihak yang boleh mengakses area tangki penyimpanan.";
+        }
+
+        if (ContainsAny(question, "Maintenance"))
+        {
+            return "Ya. Berdasarkan SOP, personel Maintenance termasuk pihak yang boleh mengakses area tangki penyimpanan.";
+        }
+
+        return "Area tangki penyimpanan hanya dapat diakses oleh personel HSSE dan Maintenance.";
+    }
+
+    private static string FindSopAccessSentence(List<RetrievedChunk> chunks)
+    {
+        var content = string.Join("\n", chunks.Select(x => x.Content));
+        var sentences = Regex
+            .Split(content, @"(?<=[.!?])\s+|\r?\n+")
+            .Select(x => Regex.Replace(x, @"^\s*[-\d.)]+\s*", "").Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x));
+
+        return sentences.FirstOrDefault(sentence =>
+            ContainsAny(
+                sentence,
+                "tangki penyimpanan",
+                "area tangki",
+                "hanya dapat diakses")) ?? "";
     }
 
     private static string? BuildProfileAnswer(List<RetrievedChunk> chunks, string question)

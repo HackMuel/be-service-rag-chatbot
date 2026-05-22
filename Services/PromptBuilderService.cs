@@ -26,6 +26,7 @@ ATURAN:
 - Jika context berisi Rekap Lembur, tampilkan semua field: Tanggal, Nama, Divisi, Durasi, Approval.
 - Jika context berisi Log Maintenance, tampilkan semua field: Kode, Peralatan, Lokasi, Status, Teknisi.
 - Jika context berisi SOP, tampilkan poin-poin SOP yang tersedia.
+- Jangan menyimpulkan bahwa seseorang boleh mengakses area tertentu hanya karena ada aturan safety briefing. Jika context menyebut akses hanya untuk pihak tertentu, pihak lain dianggap tidak disebut atau tidak diperbolehkan berdasarkan context.
 - Jika context berisi audit, jawab berdasarkan catatan audit yang tersedia.
 - Jika user menanyakan NIK seseorang, cari field NIK pada context.
 - Untuk pertanyaan exact seperti NIK, kode maintenance, dan tanggal, jawab hanya dari record yang ada di context.

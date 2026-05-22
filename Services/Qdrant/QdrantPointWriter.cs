@@ -23,23 +23,6 @@ public class QdrantPointWriter
         int chunkIndex = -1,
         string department = "")
     {
-        var recordType = ChunkMetadataExtractor.DetectRecordType(content);
-        var nik = ChunkMetadataExtractor.ExtractNik(content);
-        var name = ChunkMetadataExtractor.ExtractName(content);
-        var maintenanceCode = ChunkMetadataExtractor.ExtractMaintenanceCode(content);
-        var date = ChunkMetadataExtractor.ExtractDate(content);
-        var division = ChunkMetadataExtractor.ExtractDivision(content);
-        var position = ChunkMetadataExtractor.ExtractPosition(content);
-        var shift = ChunkMetadataExtractor.ExtractShift(content);
-        var employeeStatus = ChunkMetadataExtractor.ExtractEmployeeStatus(content);
-        var duration = ChunkMetadataExtractor.ExtractDuration(content);
-        var approval = ChunkMetadataExtractor.ExtractApproval(content);
-        var equipment = ChunkMetadataExtractor.ExtractEquipment(content);
-        var location = ChunkMetadataExtractor.ExtractLocation(content);
-        var maintenanceStatus = ChunkMetadataExtractor.ExtractMaintenanceStatus(content);
-        var technician = ChunkMetadataExtractor.ExtractTechnician(content);
-        var sectionTitle = ChunkMetadataExtractor.ExtractSectionTitle(content);
-
         var body = new
         {
             points = new[]
@@ -47,32 +30,7 @@ public class QdrantPointWriter
                 new
                 {
                     id = id.ToString(),
-                    vector = embedding,
-                    payload = new
-                    {
-                        documentId = documentId.ToString(),
-                        documentTitle,
-                        content,
-                        recordType,
-                        nik,
-                        name,
-                        nameNormalized = QdrantSearchClient.NormalizeKeyword(name),
-                        maintenanceCode,
-                        date,
-                        division,
-                        department,
-                        position,
-                        shift,
-                        employeeStatus,
-                        duration,
-                        approval,
-                        equipment,
-                        location,
-                        maintenanceStatus,
-                        technician,
-                        sectionTitle,
-                        chunkIndex = chunkIndex >= 0 ? chunkIndex : (int?)null
-                    }
+                    vector = embedding
                 }
             }
         };
