@@ -150,6 +150,56 @@ public class AnswerFormatterService
 
     private static string? BuildSopAnswer(List<RetrievedChunk> chunks, string question)
     {
+        if (ShouldUsePolicyGroundedForSop(question))
+        {
+            return null;
+        }
+
+        var content = string.Join("\n", chunks.Select(x => x.Content));
+
+        if (ContainsAny(question, "apa saja sop", "sebutkan sop", "daftar sop"))
+        {
+            return BuildSopListAnswer(content);
+        }
+
+        if (ContainsAny(question, "kecepatan", "kendaraan", "km/jam"))
+        {
+            var speedMatch = Regex.Match(
+                content,
+                @"\b\d+\s*km\s*/?\s*jam\b",
+                RegexOptions.IgnoreCase);
+
+            if (speedMatch.Success)
+            {
+                var speed = Regex.Replace(speedMatch.Value.Trim(), @"\s+", " ");
+                return $"Kecepatan maksimal kendaraan di area produksi adalah {speed}.";
+            }
+        }
+
+        if (ContainsAny(question, "apd wajib", "aturan apd"))
+        {
+            var apdSentence = FindSentence(content, "APD");
+
+            if (!string.IsNullOrWhiteSpace(apdSentence))
+                return apdSentence;
+        }
+
+        if (ContainsAny(question, "perangkat elektronik", "non-sertifikasi", "rawan ledakan"))
+        {
+            var electronicSentence = FindSentence(content, "perangkat elektronik", "non-sertifikasi", "rawan ledakan");
+
+            if (!string.IsNullOrWhiteSpace(electronicSentence))
+                return electronicSentence;
+        }
+
+        if (ContainsAny(question, "safety briefing", "shift malam"))
+        {
+            var briefingSentence = FindSentence(content, "safety briefing", "shift malam");
+
+            if (!string.IsNullOrWhiteSpace(briefingSentence))
+                return briefingSentence;
+        }
+
         if (!ContainsAny(question, "tangki", "penyimpanan", "area penyimpanan", "akses", "masuk"))
         {
             return null;
@@ -191,13 +241,76 @@ public class AnswerFormatterService
         return "Area tangki penyimpanan hanya dapat diakses oleh personel HSSE dan Maintenance.";
     }
 
+    private static bool ShouldUsePolicyGroundedForSop(string question)
+    {
+        if (IsDirectAccessListQuestion(question))
+        {
+            return false;
+        }
+
+        return ContainsAny(
+            question,
+            "selain",
+            "bukan",
+            "non-hsse",
+            "non hsse",
+            "kecuali",
+            "divisi lain",
+            "apakah orang",
+            "apakah pekerja",
+            "boleh",
+            "diperbolehkan",
+            "izin",
+            "akses",
+            "mengakses",
+            "masuk");
+    }
+
+    private static bool IsDirectAccessListQuestion(string question)
+    {
+        return ContainsAny(question, "siapa saja yang boleh", "siapa yang boleh") &&
+               ContainsAny(question, "akses", "mengakses", "masuk", "tangki", "penyimpanan");
+    }
+
+    private static string? BuildSopListAnswer(string content)
+    {
+        var sentences = ExtractSentences(content)
+            .Where(x => !x.Contains("SOP Keamanan Area Kilang", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (!sentences.Any())
+            return null;
+
+        var lines = new List<string>
+        {
+            "SOP Keamanan Area Kilang:"
+        };
+
+        lines.AddRange(sentences.Select(x => $"- {x}"));
+
+        return string.Join("\n", lines);
+    }
+
+    private static string FindSentence(string content, params string[] keywords)
+    {
+        return ExtractSentences(content)
+            .FirstOrDefault(sentence => ContainsAny(sentence, keywords)) ?? "";
+    }
+
+    private static List<string> ExtractSentences(string content)
+    {
+        return Regex
+            .Split(content, @"(?<=[.!?])\s+|\r?\n+")
+            .Select(x => Regex.Replace(x, @"^\s*[-\d.)]+\s*", "").Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToList();
+    }
+
     private static string FindSopAccessSentence(List<RetrievedChunk> chunks)
     {
         var content = string.Join("\n", chunks.Select(x => x.Content));
-        var sentences = Regex
-            .Split(content, @"(?<=[.!?])\s+|\r?\n+")
-            .Select(x => Regex.Replace(x, @"^\s*[-\d.)]+\s*", "").Trim())
-            .Where(x => !string.IsNullOrWhiteSpace(x));
+        var sentences = ExtractSentences(content);
 
         return sentences.FirstOrDefault(sentence =>
             ContainsAny(

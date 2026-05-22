@@ -3,6 +3,7 @@ namespace be_service.Models;
 public class RagQueryAnalysis
 {
     public string Question { get; set; } = string.Empty;
+    public AnswerLevel AnswerLevel { get; set; } = AnswerLevel.Unknown;
 
     public string Nik { get; set; } = string.Empty;
     public string MaintenanceCode { get; set; } = string.Empty;
@@ -30,4 +31,10 @@ public class RagQueryAnalysis
 
     public string PersonKeyword { get; set; } = string.Empty;
     public bool LooksLikePersonName { get; set; }
+
+    public bool IsPolicyQuestion { get; set; }
+    public bool IsAccessQuestion { get; set; }
+    public bool IsPermissionQuestion { get; set; }
+    public bool RequiresGroundedLlm { get; set; }
+    public string TargetRecordType { get; set; } = string.Empty;
 }

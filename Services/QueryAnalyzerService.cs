@@ -28,10 +28,59 @@ public class QueryAnalyzerService
         );
 
         var personKeyword = ExtractPersonKeyword(question);
+        var looksLikePersonName = LooksLikePersonName(personKeyword);
+
+        var isSopQuery = IsSopQuery(question);
+        var isProfileQuery = IsProfileQuery(question);
+        var isAuditQuery = IsAuditQuery(question);
+        var isEmployeeQuery = IsEmployeeQuery(question);
+        var isOvertimeQuery = IsOvertimeQuery(question);
+        var isMaintenanceQuery = IsMaintenanceQuery(question);
+
+        var division = ExtractDivisionFromQuestion(question);
+        var shift = ExtractShiftFromQuestion(question);
+        var employeeStatus = ExtractEmployeeStatusFromQuestion(question);
+        var position = ExtractPositionFromQuestion(question);
+        var maintenanceStatus = ExtractMaintenanceStatusFromQuestion(question);
+        var approval = ExtractApprovalFromQuestion(question);
+        var location = ExtractLocationFromQuestion(question);
+        var technician = ExtractTechnicianFromQuestion(question);
+
+        var isAccessQuestion = IsAccessQuestion(question);
+        var isPermissionQuestion = IsPermissionQuestion(question);
+        var isPolicyQuestion = IsPolicyQuestion(question);
+        var targetRecordType = DetermineTargetRecordType(
+            question,
+            isSopQuery,
+            isAuditQuery,
+            isProfileQuery);
+
+        var answerLevel = DetermineAnswerLevel(
+            question,
+            nikMatch.Success,
+            maintenanceMatch.Success,
+            dateMatch.Success,
+            isEmployeeQuery,
+            isOvertimeQuery,
+            isMaintenanceQuery,
+            isSopQuery,
+            isProfileQuery,
+            isAuditQuery,
+            !string.IsNullOrWhiteSpace(division),
+            !string.IsNullOrWhiteSpace(shift),
+            !string.IsNullOrWhiteSpace(employeeStatus),
+            !string.IsNullOrWhiteSpace(position),
+            !string.IsNullOrWhiteSpace(maintenanceStatus),
+            !string.IsNullOrWhiteSpace(approval),
+            !string.IsNullOrWhiteSpace(location),
+            !string.IsNullOrWhiteSpace(technician),
+            looksLikePersonName,
+            isPolicyQuestion);
 
         return new RagQueryAnalysis
         {
             Question = question,
+            AnswerLevel = answerLevel,
 
             Nik = nikMatch.Success
                 ? ChunkMetadataExtractor.NormalizeNik(nikMatch.Value)
@@ -43,28 +92,34 @@ public class QueryAnalyzerService
 
             Date = dateMatch.Success ? dateMatch.Value : string.Empty,
 
-            IsSopQuery = IsSopQuery(question),
-            IsProfileQuery = IsProfileQuery(question),
-            IsAuditQuery = IsAuditQuery(question),
-            IsEmployeeQuery = IsEmployeeQuery(question),
-            IsOvertimeQuery = IsOvertimeQuery(question),
-            IsMaintenanceQuery = IsMaintenanceQuery(question),
+            IsSopQuery = isSopQuery,
+            IsProfileQuery = isProfileQuery,
+            IsAuditQuery = isAuditQuery,
+            IsEmployeeQuery = isEmployeeQuery,
+            IsOvertimeQuery = isOvertimeQuery,
+            IsMaintenanceQuery = isMaintenanceQuery,
 
             SopKeyword = BuildSopKeyword(question),
             ProfileKeyword = BuildProfileKeyword(question),
 
-            Division = ExtractDivisionFromQuestion(question),
-            Shift = ExtractShiftFromQuestion(question),
-            EmployeeStatus = ExtractEmployeeStatusFromQuestion(question),
-            Position = ExtractPositionFromQuestion(question),
+            Division = division,
+            Shift = shift,
+            EmployeeStatus = employeeStatus,
+            Position = position,
 
-            MaintenanceStatus = ExtractMaintenanceStatusFromQuestion(question),
-            Approval = ExtractApprovalFromQuestion(question),
-            Location = ExtractLocationFromQuestion(question),
-            Technician = ExtractTechnicianFromQuestion(question),
+            MaintenanceStatus = maintenanceStatus,
+            Approval = approval,
+            Location = location,
+            Technician = technician,
 
             PersonKeyword = personKeyword,
-            LooksLikePersonName = LooksLikePersonName(personKeyword)
+            LooksLikePersonName = looksLikePersonName,
+
+            IsPolicyQuestion = isPolicyQuestion,
+            IsAccessQuestion = isAccessQuestion,
+            IsPermissionQuestion = isPermissionQuestion,
+            RequiresGroundedLlm = answerLevel is AnswerLevel.PolicyGrounded or AnswerLevel.SemanticGrounded,
+            TargetRecordType = targetRecordType
         };
     }
 
@@ -81,7 +136,14 @@ public class QueryAnalyzerService
             "area produksi",
             "tangki",
             "penyimpanan",
-            "kecepatan");
+            "kecepatan",
+            "kendaraan",
+            "km/jam",
+            "perangkat elektronik",
+            "non-sertifikasi",
+            "rawan ledakan",
+            "safety briefing",
+            "shift malam");
     }
 
     private static bool IsProfileQuery(string question)
@@ -107,7 +169,6 @@ public class QueryAnalyzerService
             question,
             "audit",
             "kepatuhan",
-            "apd",
             "inspeksi",
             "temuan",
             "non-konformitas",
@@ -137,6 +198,195 @@ public class QueryAnalyzerService
             "peralatan",
             "teknisi",
             "log maintenance");
+    }
+
+    private static bool IsAccessQuestion(string question)
+    {
+        return ContainsAny(
+            question,
+            "akses",
+            "mengakses",
+            "masuk",
+            "area tangki",
+            "area penyimpanan");
+    }
+
+    private static bool IsPermissionQuestion(string question)
+    {
+        return ContainsAny(
+            question,
+            "boleh",
+            "bolehkah",
+            "diperbolehkan",
+            "izin",
+            "apakah orang",
+            "apakah personel",
+            "apakah pekerja");
+    }
+
+    private static bool IsPolicyQuestion(string question)
+    {
+        return IsAccessQuestion(question) ||
+               IsPermissionQuestion(question) ||
+               ContainsAny(
+                   question,
+                   "selain",
+                   "kecuali",
+                   "bukan",
+                   "non-hsse",
+                   "non hsse",
+                   "divisi lain",
+                   "pekerja dari divisi lain");
+    }
+
+    private static string DetermineTargetRecordType(
+        string question,
+        bool isSopQuery,
+        bool isAuditQuery,
+        bool isProfileQuery)
+    {
+        if (isProfileQuery)
+            return "profile";
+
+        if (ContainsAny(
+                question,
+                "backup",
+                "server",
+                "kepatuhan",
+                "audit",
+                "inspeksi",
+                "temuan",
+                "non-konformitas",
+                "anomali suhu",
+                "pelanggaran minor"))
+        {
+            return "audit";
+        }
+
+        if (isSopQuery)
+            return "sop";
+
+        return string.Empty;
+    }
+
+    private static AnswerLevel DetermineAnswerLevel(
+        string question,
+        bool hasNik,
+        bool hasMaintenanceCode,
+        bool hasDate,
+        bool isEmployeeQuery,
+        bool isOvertimeQuery,
+        bool isMaintenanceQuery,
+        bool isSopQuery,
+        bool isProfileQuery,
+        bool isAuditQuery,
+        bool hasDivision,
+        bool hasShift,
+        bool hasEmployeeStatus,
+        bool hasPosition,
+        bool hasMaintenanceStatus,
+        bool hasApproval,
+        bool hasLocation,
+        bool hasTechnician,
+        bool looksLikePersonName,
+        bool isPolicyQuestion)
+    {
+        var looksLikeStructuredName =
+            looksLikePersonName &&
+            !isSopQuery &&
+            !isProfileQuery &&
+            !isAuditQuery;
+
+        if (hasNik || hasMaintenanceCode || hasDate ||
+            (isEmployeeQuery && (hasDivision || hasShift || hasEmployeeStatus || hasPosition)) ||
+            (isOvertimeQuery && (hasApproval || hasDivision || looksLikeStructuredName)) ||
+            (isMaintenanceQuery && (hasMaintenanceStatus || hasLocation || hasTechnician)) ||
+            looksLikeStructuredName)
+        {
+            return AnswerLevel.ExactStructured;
+        }
+
+        if (IsDirectAccessListQuestion(question) && isSopQuery)
+        {
+            return AnswerLevel.DeterministicTemplate;
+        }
+
+        if (isPolicyQuestion)
+        {
+            return AnswerLevel.PolicyGrounded;
+        }
+
+        if (IsSemanticGroundedQuestion(question))
+        {
+            return AnswerLevel.SemanticGrounded;
+        }
+
+        if (IsDeterministicTemplateQuestion(question, isSopQuery, isProfileQuery, isAuditQuery))
+        {
+            return AnswerLevel.DeterministicTemplate;
+        }
+
+        return AnswerLevel.SemanticGrounded;
+    }
+
+    private static bool IsDeterministicTemplateQuestion(
+        string question,
+        bool isSopQuery,
+        bool isProfileQuery,
+        bool isAuditQuery)
+    {
+        if (isProfileQuery)
+            return true;
+
+        if (isAuditQuery && ContainsAny(
+                question,
+                "backup",
+                "server",
+                "kepatuhan",
+                "pelanggaran minor",
+                "anomali suhu",
+                "cctv"))
+        {
+            return true;
+        }
+
+        if (!isSopQuery)
+            return false;
+
+        return ContainsAny(
+            question,
+            "apa saja sop",
+            "sebutkan sop",
+            "daftar sop",
+            "kecepatan",
+            "kendaraan",
+            "km/jam",
+            "apd wajib",
+            "aturan apd",
+            "perangkat elektronik",
+            "non-sertifikasi",
+            "rawan ledakan",
+            "safety briefing",
+            "shift malam");
+    }
+
+    private static bool IsSemanticGroundedQuestion(string question)
+    {
+        return ContainsAny(
+            question,
+            "ringkas",
+            "jelaskan",
+            "bagaimana",
+            "risiko",
+            "prosedur",
+            "evaluasi",
+            "gambaran umum");
+    }
+
+    private static bool IsDirectAccessListQuestion(string question)
+    {
+        return ContainsAny(question, "siapa saja yang boleh", "siapa yang boleh") &&
+               ContainsAny(question, "akses", "mengakses", "masuk", "tangki", "penyimpanan");
     }
 
     private static string ExtractDivisionFromQuestion(string question)
@@ -390,17 +640,23 @@ public class QueryAnalyzerService
         if (ContainsAny(question, "apd"))
             return "APD";
 
-        if (ContainsAny(question, "area produksi"))
-            return "area produksi";
+        if (ContainsAny(question, "kecepatan", "kendaraan", "km/jam"))
+            return "kendaraan 20 km/jam area produksi";
+
+        if (ContainsAny(question, "perangkat elektronik", "non-sertifikasi", "rawan ledakan"))
+            return "perangkat elektronik";
+
+        if (ContainsAny(question, "safety briefing", "shift malam"))
+            return "safety briefing";
 
         if (ContainsAny(question, "akses", "mengakses"))
             return "akses";
 
+        if (ContainsAny(question, "area produksi"))
+            return "area produksi";
+
         if (ContainsAny(question, "sop", "keamanan", "area kilang"))
             return "SOP Keamanan Area Kilang";
-
-        if (ContainsAny(question, "kecepatan", "kendaraan", "km/jam"))
-            return "kendaraan 20 km/jam area produksi";
 
         return question;
     }

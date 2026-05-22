@@ -63,6 +63,11 @@ public class RagChatService
 
         if (!relevantChunks.Any())
         {
+            LogAnswerTrace(
+                retrievalResult,
+                usedDeterministicAnswer: false,
+                usedLlm: false);
+
             return NotFoundResponse();
         }
 
@@ -73,6 +78,11 @@ public class RagChatService
 
         if (!string.IsNullOrWhiteSpace(deterministicAnswer))
         {
+            LogAnswerTrace(
+                retrievalResult,
+                usedDeterministicAnswer: true,
+                usedLlm: false);
+
             return new ChatResponse
             {
                 Answer = deterministicAnswer,
@@ -80,15 +90,27 @@ public class RagChatService
             };
         }
 
-        var prompt = _promptBuilderService.Build(question, relevantChunks);
+        var prompt = retrievalResult.AnswerLevel == AnswerLevel.PolicyGrounded
+            ? _promptBuilderService.BuildPolicyGroundedPrompt(question, relevantChunks)
+            : _promptBuilderService.Build(question, relevantChunks);
 
         var answer =
             await _ollamaService.GenerateChatAsync(prompt);
 
         if (IsNotFoundAnswer(answer))
         {
+            LogAnswerTrace(
+                retrievalResult,
+                usedDeterministicAnswer: false,
+                usedLlm: true);
+
             return NotFoundResponse();
         }
+
+        LogAnswerTrace(
+            retrievalResult,
+            usedDeterministicAnswer: false,
+            usedLlm: true);
 
         return new ChatResponse
         {
@@ -127,6 +149,21 @@ public class RagChatService
         return string.IsNullOrWhiteSpace(chunk.RecordType)
             ? ChunkMetadataExtractor.DetectRecordType(chunk.Content)
             : chunk.RecordType;
+    }
+
+    private void LogAnswerTrace(
+        RagRetrievalResult retrievalResult,
+        bool usedDeterministicAnswer,
+        bool usedLlm)
+    {
+        _logger.LogInformation(
+            "ANSWER_TRACE answerLevel={AnswerLevel}, retrievalMode={RetrievalMode}, source={RetrievalSource}, qdrantVectorSearch={QdrantVectorSearch}, usedDeterministicAnswer={UsedDeterministicAnswer}, usedLlm={UsedLlm}",
+            retrievalResult.AnswerLevel,
+            retrievalResult.RetrievalMode,
+            retrievalResult.RetrievalSource,
+            retrievalResult.QdrantVectorSearch,
+            usedDeterministicAnswer,
+            usedLlm);
     }
 
 }
