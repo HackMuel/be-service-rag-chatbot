@@ -37,4 +37,5 @@ public class RagQueryAnalysis
     public bool IsPermissionQuestion { get; set; }
     public bool RequiresGroundedLlm { get; set; }
     public string TargetRecordType { get; set; } = string.Empty;
+    public string GenericRecordType { get; set; } = string.Empty;
 }

@@ -8,6 +8,7 @@ public class RetrievalService
     private readonly QdrantService _qdrantService;
     private readonly OllamaService _ollamaService;
     private readonly ChunkRepository _chunkRepository;
+    private readonly StructuredEntityResolver _structuredEntityResolver;
     private readonly ILogger<RetrievalService> _logger;
 
     private const float MinimumSemanticSimilarity = 0.55f;
@@ -17,11 +18,13 @@ public class RetrievalService
         QdrantService qdrantService,
         OllamaService ollamaService,
         ChunkRepository chunkRepository,
+        StructuredEntityResolver structuredEntityResolver,
         ILogger<RetrievalService> logger)
     {
         _qdrantService = qdrantService;
         _ollamaService = ollamaService;
         _chunkRepository = chunkRepository;
+        _structuredEntityResolver = structuredEntityResolver;
         _logger = logger;
     }
 
@@ -32,6 +35,10 @@ public class RetrievalService
         var contextLimit = 5;
         var retrievalSource = "";
         var qdrantVectorSearch = false;
+        var hasHardExactIdentifier =
+            !string.IsNullOrWhiteSpace(analysis.Nik) ||
+            !string.IsNullOrWhiteSpace(analysis.MaintenanceCode) ||
+            !string.IsNullOrWhiteSpace(analysis.Date);
 
         /*
          * Routing order matters:
@@ -68,7 +75,7 @@ public class RetrievalService
                 "",
                 3);
 
-            retrievalMode = "audit";
+            retrievalMode = analysis.GenericRecordType == "audit" ? "audit_general" : "audit";
             retrievalSource = "postgres_record_type";
             contextLimit = 3;
         }
@@ -87,7 +94,7 @@ public class RetrievalService
                     5);
             }
 
-            retrievalMode = "sop";
+            retrievalMode = analysis.GenericRecordType == "sop" ? "sop_general" : "sop";
             retrievalSource = "postgres_record_type";
             contextLimit = 5;
         }
@@ -204,6 +211,31 @@ public class RetrievalService
             }
         }
 
+        if (!chunks.Any() &&
+            !hasHardExactIdentifier &&
+            ShouldTryStructuredEntityResolver(analysis))
+        {
+            var resolved = await TryRetrieveByStructuredEntityAsync(analysis);
+
+            if (resolved.Chunks.Any())
+            {
+                chunks = resolved.Chunks;
+                retrievalMode = resolved.RetrievalMode;
+                retrievalSource = "postgres_exact";
+                contextLimit = resolved.ContextLimit;
+            }
+        }
+
+        if (!chunks.Any() &&
+            !hasHardExactIdentifier &&
+            !string.IsNullOrWhiteSpace(analysis.GenericRecordType))
+        {
+            chunks = await SearchGenericRecordTypeAsync(analysis.GenericRecordType);
+            retrievalMode = $"{analysis.GenericRecordType}_general";
+            retrievalSource = "postgres_record_type";
+            contextLimit = GetGenericContextLimit(analysis.GenericRecordType);
+        }
+
         if (!chunks.Any() && analysis.AnswerLevel != AnswerLevel.ExactStructured)
         {
             var embedding = await _ollamaService.GenerateEmbeddingAsync(analysis.Question);
@@ -248,6 +280,128 @@ public class RetrievalService
             RetrievalSource = retrievalSource,
             QdrantVectorSearch = qdrantVectorSearch
         };
+    }
+
+    private async Task<(List<RetrievedChunk> Chunks, string RetrievalMode, int ContextLimit)> TryRetrieveByStructuredEntityAsync(
+        RagQueryAnalysis analysis)
+    {
+        var entity = await _structuredEntityResolver.ResolveAsync(
+            analysis.Question,
+            analysis);
+
+        if (entity is null)
+        {
+            return (new List<RetrievedChunk>(), "", 0);
+        }
+
+        var chunks = entity.FieldName switch
+        {
+            "name" when analysis.IsOvertimeQuery =>
+                await _chunkRepository.SearchOvertimeByNameAsync(entity.Value, 10),
+
+            "name" =>
+                await _chunkRepository.SearchByNameAsync(entity.Value, 10),
+
+            "division" when analysis.IsOvertimeQuery =>
+                await _chunkRepository.SearchOvertimeByDivisionAsync(entity.Value),
+
+            "division" =>
+                await _chunkRepository.SearchEmployeesByDivisionAsync(entity.Value),
+
+            "shift" =>
+                await _chunkRepository.SearchEmployeesByShiftAsync(entity.Value),
+
+            "employeeStatus" =>
+                await _chunkRepository.SearchEmployeesByStatusAsync(entity.Value),
+
+            "position" =>
+                await _chunkRepository.SearchEmployeesByPositionAsync(entity.Value),
+
+            "approval" =>
+                await _chunkRepository.SearchOvertimeByApprovalAsync(entity.Value),
+
+            "maintenanceStatus" =>
+                await _chunkRepository.SearchMaintenanceByStatusAsync(entity.Value),
+
+            "location" =>
+                await _chunkRepository.SearchMaintenanceByLocationAsync(entity.Value),
+
+            "technician" =>
+                await _chunkRepository.SearchMaintenanceByTechnicianAsync(entity.Value),
+
+            "equipment" =>
+                await _chunkRepository.SearchMaintenanceByEquipmentAsync(entity.Value),
+
+            _ => new List<RetrievedChunk>()
+        };
+
+        if (!chunks.Any())
+        {
+            return (chunks, "", 0);
+        }
+
+        _logger.LogInformation(
+            "STRUCTURED_ENTITY_TRACE field={FieldName}, recordType={RecordType}, chunks={ChunkCount}",
+            entity.FieldName,
+            entity.RecordType,
+            chunks.Count);
+
+        return (
+            chunks,
+            BuildRetrievalMode(entity, analysis),
+            GetStructuredEntityContextLimit(entity.FieldName));
+    }
+
+    private static bool ShouldTryStructuredEntityResolver(RagQueryAnalysis analysis)
+    {
+        return !analysis.IsSopQuery &&
+               !analysis.IsAuditQuery &&
+               !analysis.IsProfileQuery &&
+               !analysis.IsPolicyQuestion;
+    }
+
+    private async Task<List<RetrievedChunk>> SearchGenericRecordTypeAsync(string recordType)
+    {
+        var limit = GetGenericContextLimit(recordType);
+
+        return await _chunkRepository.SearchByRecordTypeAsync(
+            recordType,
+            "",
+            limit);
+    }
+
+    private static string BuildRetrievalMode(
+        StructuredEntityMatch entity,
+        RagQueryAnalysis analysis)
+    {
+        return entity.FieldName switch
+        {
+            "name" when analysis.IsOvertimeQuery => "exact-name-overtime",
+            "name" => "exact-name",
+            "division" when analysis.IsOvertimeQuery => "overtime_by_division",
+            "division" => "employee_by_division",
+            "shift" => "employee_by_shift",
+            "employeeStatus" => "employee_by_status",
+            "position" => "employee_by_position",
+            "approval" => "overtime_by_approval",
+            "maintenanceStatus" => "maintenance_by_status",
+            "location" => "maintenance_by_location",
+            "technician" => "maintenance_by_technician",
+            "equipment" => "maintenance_by_equipment",
+            _ => "structured_entity"
+        };
+    }
+
+    private static int GetStructuredEntityContextLimit(string fieldName)
+    {
+        return fieldName == "name" ? 10 : 50;
+    }
+
+    private static int GetGenericContextLimit(string recordType)
+    {
+        return recordType is "employee" or "overtime" or "maintenance"
+            ? 50
+            : 5;
     }
 
     private async Task<List<RetrievedChunk>> GetSemanticChunksFromRepositoryAsync(

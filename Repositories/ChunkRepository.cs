@@ -221,6 +221,84 @@ public class ChunkRepository
         }, limit);
     }
 
+    public async Task<List<RetrievedChunk>> SearchMaintenanceByEquipmentAsync(string equipment, int limit = 50)
+    {
+        return await SearchByMetadataAsync(new Dictionary<string, string>
+        {
+            ["recordType"] = "maintenance",
+            ["equipment"] = equipment
+        }, limit);
+    }
+
+    public async Task<List<StructuredEntityMatch>> GetKnownStructuredEntitiesAsync()
+    {
+        await using var conn = await OpenConnectionAsync();
+
+        const string sql = @"
+            select
+                field_name,
+                value,
+                record_type
+            from (
+                select 'name'::text as field_name, dc.metadata->>'name' as value, coalesce(dc.metadata->>'recordType', '') as record_type
+                from document_chunks dc
+                union all
+                select 'division'::text, dc.metadata->>'division', coalesce(dc.metadata->>'recordType', '')
+                from document_chunks dc
+                union all
+                select 'position'::text, dc.metadata->>'position', coalesce(dc.metadata->>'recordType', '')
+                from document_chunks dc
+                union all
+                select 'shift'::text, dc.metadata->>'shift', coalesce(dc.metadata->>'recordType', '')
+                from document_chunks dc
+                union all
+                select 'employeeStatus'::text, dc.metadata->>'employeeStatus', coalesce(dc.metadata->>'recordType', '')
+                from document_chunks dc
+                union all
+                select 'approval'::text, dc.metadata->>'approval', coalesce(dc.metadata->>'recordType', '')
+                from document_chunks dc
+                union all
+                select 'maintenanceStatus'::text, dc.metadata->>'maintenanceStatus', coalesce(dc.metadata->>'recordType', '')
+                from document_chunks dc
+                union all
+                select 'location'::text, dc.metadata->>'location', coalesce(dc.metadata->>'recordType', '')
+                from document_chunks dc
+                union all
+                select 'equipment'::text, dc.metadata->>'equipment', coalesce(dc.metadata->>'recordType', '')
+                from document_chunks dc
+                union all
+                select 'technician'::text, dc.metadata->>'technician', coalesce(dc.metadata->>'recordType', '')
+                from document_chunks dc
+            ) known_entities
+            where nullif(btrim(value), '') is not null
+            group by field_name, value, record_type
+            order by length(value) desc, field_name asc;
+        ";
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        var matches = new List<StructuredEntityMatch>();
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+
+        while (await reader.ReadAsync())
+        {
+            var value = reader.IsDBNull(1) ? "" : reader.GetString(1);
+
+            if (string.IsNullOrWhiteSpace(value))
+                continue;
+
+            matches.Add(new StructuredEntityMatch
+            {
+                FieldName = reader.IsDBNull(0) ? "" : reader.GetString(0),
+                Value = value,
+                RecordType = reader.IsDBNull(2) ? "" : reader.GetString(2),
+                Priority = value.Length
+            });
+        }
+
+        return matches;
+    }
+
     public async Task<List<RetrievedChunk>> SearchByRecordTypeAsync(
         string recordType,
         string keyword,

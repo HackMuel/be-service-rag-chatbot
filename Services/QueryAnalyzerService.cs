@@ -54,6 +54,21 @@ public class QueryAnalyzerService
             isSopQuery,
             isAuditQuery,
             isProfileQuery);
+        var genericRecordType = DetectGenericRecordType(
+            question,
+            nikMatch.Success,
+            maintenanceMatch.Success,
+            dateMatch.Success,
+            looksLikePersonName,
+            isPolicyQuestion,
+            !string.IsNullOrWhiteSpace(division),
+            !string.IsNullOrWhiteSpace(shift),
+            !string.IsNullOrWhiteSpace(employeeStatus),
+            !string.IsNullOrWhiteSpace(position),
+            !string.IsNullOrWhiteSpace(maintenanceStatus),
+            !string.IsNullOrWhiteSpace(approval),
+            !string.IsNullOrWhiteSpace(location),
+            !string.IsNullOrWhiteSpace(technician));
 
         var answerLevel = DetermineAnswerLevel(
             question,
@@ -75,7 +90,8 @@ public class QueryAnalyzerService
             !string.IsNullOrWhiteSpace(location),
             !string.IsNullOrWhiteSpace(technician),
             looksLikePersonName,
-            isPolicyQuestion);
+            isPolicyQuestion,
+            genericRecordType);
 
         return new RagQueryAnalysis
         {
@@ -119,7 +135,8 @@ public class QueryAnalyzerService
             IsAccessQuestion = isAccessQuestion,
             IsPermissionQuestion = isPermissionQuestion,
             RequiresGroundedLlm = answerLevel is AnswerLevel.PolicyGrounded or AnswerLevel.SemanticGrounded,
-            TargetRecordType = targetRecordType
+            TargetRecordType = targetRecordType,
+            GenericRecordType = genericRecordType
         };
     }
 
@@ -289,13 +306,21 @@ public class QueryAnalyzerService
         bool hasLocation,
         bool hasTechnician,
         bool looksLikePersonName,
-        bool isPolicyQuestion)
+        bool isPolicyQuestion,
+        string genericRecordType)
     {
         var looksLikeStructuredName =
             looksLikePersonName &&
             !isSopQuery &&
             !isProfileQuery &&
             !isAuditQuery;
+
+        if (!string.IsNullOrWhiteSpace(genericRecordType))
+        {
+            return genericRecordType is "sop" or "audit"
+                ? AnswerLevel.DeterministicTemplate
+                : AnswerLevel.ExactStructured;
+        }
 
         if (hasNik || hasMaintenanceCode || hasDate ||
             (isEmployeeQuery && (hasDivision || hasShift || hasEmployeeStatus || hasPosition)) ||
@@ -543,17 +568,25 @@ public class QueryAnalyzerService
         {
             "apa",
             "itu",
+            "apakah",
             "siapa",
             "saja",
             "semua",
+            "saya",
+            "aku",
+            "kamu",
+            "ada",
             "berikan",
             "beri",
             "tampilkan",
+            "cari",
             "data",
             "karyawan",
             "pegawai",
             "dengan",
             "nama",
+            "bernama",
+            "atas",
             "nik",
             "berapa",
             "nya",
@@ -561,6 +594,7 @@ public class QueryAnalyzerService
             "memiliki",
             "punya",
             "tolong",
+            "mohon",
             "carikan",
             "info",
             "informasi",
@@ -585,6 +619,79 @@ public class QueryAnalyzerService
         }
 
         return Regex.Replace(cleaned, @"\s+", " ").Trim();
+    }
+
+    private static string DetectGenericRecordType(
+        string question,
+        bool hasNik,
+        bool hasMaintenanceCode,
+        bool hasDate,
+        bool looksLikePersonName,
+        bool isPolicyQuestion,
+        bool hasDivision,
+        bool hasShift,
+        bool hasEmployeeStatus,
+        bool hasPosition,
+        bool hasMaintenanceStatus,
+        bool hasApproval,
+        bool hasLocation,
+        bool hasTechnician)
+    {
+        if (hasNik ||
+            hasMaintenanceCode ||
+            hasDate ||
+            looksLikePersonName ||
+            isPolicyQuestion)
+        {
+            return string.Empty;
+        }
+
+        if (!IsGenericDataQuestion(question))
+            return string.Empty;
+
+        if (ContainsAny(question, "karyawan", "pegawai"))
+            return "employee";
+
+        if (ContainsAny(question, "lembur", "rekap lembur"))
+            return "overtime";
+
+        if (ContainsAny(question, "maintenance", "log maintenance", "perawatan"))
+            return "maintenance";
+
+        if (ContainsAny(question, "sop"))
+            return "sop";
+
+        if (ContainsAny(question, "audit"))
+            return "audit";
+
+        return string.Empty;
+    }
+
+    private static bool IsGenericDataQuestion(string question)
+    {
+        return ContainsAny(
+            question,
+            "data karyawan",
+            "data pegawai",
+            "data lembur",
+            "rekap lembur",
+            "data maintenance",
+            "data perawatan",
+            "ada data",
+            "apakah ada",
+            "berikan data",
+            "berikan saya data",
+            "tampilkan data",
+            "tolong tampilkan data",
+            "memiliki data",
+            "punya data",
+            "data tentang",
+            "ada log",
+            "log maintenance",
+            "dokumen ini punya",
+            "punya sop",
+            "sop apa saja",
+            "apa saja sop");
     }
 
     private static bool LooksLikePersonName(string value)

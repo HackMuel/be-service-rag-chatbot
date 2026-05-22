@@ -15,14 +15,18 @@ public class AnswerFormatterService
             return BuildProfileAnswer(chunks, question);
         }
 
-        if (retrievalMode == "audit")
+        if (retrievalMode is "audit" or "audit_general")
         {
-            return BuildAuditAnswer(chunks, question);
+            return BuildAuditAnswer(chunks, question) ??
+                   (retrievalMode == "audit_general" ? BuildNarrativeRecordTypeAnswer("Data Audit", chunks) : null);
         }
 
-        if (retrievalMode == "sop")
+        if (retrievalMode is "sop" or "sop_general")
         {
-            return BuildSopAnswer(chunks, question);
+            return BuildSopAnswer(chunks, question) ??
+                   (retrievalMode == "sop_general"
+                       ? BuildSopListAnswer(string.Join("\n", chunks.Select(x => x.Content)))
+                       : null);
         }
 
         if (retrievalMode == "exact-maintenance-code")
@@ -157,7 +161,14 @@ public class AnswerFormatterService
 
         var content = string.Join("\n", chunks.Select(x => x.Content));
 
-        if (ContainsAny(question, "apa saja sop", "sebutkan sop", "daftar sop"))
+        if (ContainsAny(
+                question,
+                "apa saja sop",
+                "sop apa saja",
+                "sebutkan sop",
+                "daftar sop",
+                "punya sop",
+                "dokumen ini punya sop"))
         {
             return BuildSopListAnswer(content);
         }
@@ -287,6 +298,25 @@ public class AnswerFormatterService
             "SOP Keamanan Area Kilang:"
         };
 
+        lines.AddRange(sentences.Select(x => $"- {x}"));
+
+        return string.Join("\n", lines);
+    }
+
+    private static string? BuildNarrativeRecordTypeAnswer(
+        string title,
+        List<RetrievedChunk> chunks)
+    {
+        var sentences = chunks
+            .SelectMany(x => ExtractSentences(x.Content))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToList();
+
+        if (!sentences.Any())
+            return null;
+
+        var lines = new List<string> { $"{title}:" };
         lines.AddRange(sentences.Select(x => $"- {x}"));
 
         return string.Join("\n", lines);
