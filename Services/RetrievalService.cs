@@ -49,23 +49,29 @@ public class RetrievalService
         */
         if (!string.IsNullOrWhiteSpace(analysis.Nik))
         {
-            chunks = await _chunkRepository.SearchByNikAsync(analysis.Nik);
+            chunks = NormalizeQdrantExactChunks(
+                "exact-nik",
+                await _qdrantService.SearchByNikAsync(analysis.Nik));
             retrievalMode = "exact-nik";
-            retrievalSource = "postgres_exact";
+            retrievalSource = "qdrant_payload";
             contextLimit = 1;
         }
         else if (!string.IsNullOrWhiteSpace(analysis.MaintenanceCode))
         {
-            chunks = await _chunkRepository.SearchByMaintenanceCodeAsync(analysis.MaintenanceCode);
+            chunks = NormalizeQdrantExactChunks(
+                "exact-maintenance-code",
+                await _qdrantService.SearchByMaintenanceCodeAsync(analysis.MaintenanceCode));
             retrievalMode = "exact-maintenance-code";
-            retrievalSource = "postgres_exact";
+            retrievalSource = "qdrant_payload";
             contextLimit = 1;
         }
         else if (!string.IsNullOrWhiteSpace(analysis.Date))
         {
-            chunks = await _chunkRepository.SearchByDateAsync(analysis.Date);
+            chunks = NormalizeQdrantExactChunks(
+                "exact-date",
+                await _qdrantService.SearchByDateAsync(analysis.Date));
             retrievalMode = "exact-date";
-            retrievalSource = "postgres_exact";
+            retrievalSource = "qdrant_payload";
             contextLimit = 10;
         }
         else if (analysis.IsAuditQuery)
@@ -398,6 +404,34 @@ public class RetrievalService
             _logger.LogWarning(
                 "Qdrant recordType payload missing. Re-ingest required. recordType={RecordType}, hits={HitCount}, withPayload={PayloadCount}",
                 recordType,
+                chunks.Count,
+                chunksWithPayload.Count);
+        }
+
+        return chunksWithPayload
+            .GroupBy(GetQdrantRecordDedupKey)
+            .Select(x => x.First())
+            .ToList();
+    }
+
+    private List<RetrievedChunk> NormalizeQdrantExactChunks(
+        string lookupName,
+        List<RetrievedChunk> chunks)
+    {
+        if (!chunks.Any())
+        {
+            return chunks;
+        }
+
+        var chunksWithPayload = chunks
+            .Where(HasQdrantPayload)
+            .ToList();
+
+        if (chunksWithPayload.Count != chunks.Count)
+        {
+            _logger.LogWarning(
+                "Qdrant exact payload missing. Re-ingest required. lookup={LookupName}, hits={HitCount}, withPayload={PayloadCount}",
+                lookupName,
                 chunks.Count,
                 chunksWithPayload.Count);
         }
