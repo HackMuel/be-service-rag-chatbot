@@ -80,14 +80,8 @@ public class DocumentIngestionOrchestrator
             var embedding = await _embeddingIngestionService.GenerateEmbeddingAsync(chunks[i]);
 
             await _qdrantService.UpsertChunkAsync(
-                chunkId,
-                documentId,
-                request.Title,
-                chunks[i],
-                embedding,
-                i,
-                request.Department
-            );
+                chunk,
+                embedding);
         }
 
         return documentId;

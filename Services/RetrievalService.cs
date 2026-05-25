@@ -70,51 +70,42 @@ public class RetrievalService
         }
         else if (analysis.IsAuditQuery)
         {
-            chunks = await _chunkRepository.SearchByRecordTypeAsync(
-                "audit",
-                "",
-                3);
+            chunks = await SearchQdrantRecordTypeAsync("audit", "", 3);
 
             retrievalMode = analysis.GenericRecordType == "audit" ? "audit_general" : "audit";
-            retrievalSource = "postgres_record_type";
+            retrievalSource = "qdrant_payload";
             contextLimit = 3;
         }
         else if (analysis.IsSopQuery)
         {
-            chunks = await _chunkRepository.SearchByRecordTypeAsync(
+            chunks = await SearchQdrantRecordTypeAsync(
                 "sop",
                 analysis.SopKeyword,
                 5);
 
             if (!chunks.Any() && !string.IsNullOrWhiteSpace(analysis.SopKeyword))
             {
-                chunks = await _chunkRepository.SearchByRecordTypeAsync(
-                    "sop",
-                    "",
-                    5);
+                chunks = await SearchQdrantRecordTypeAsync("sop", 5);
             }
 
             retrievalMode = analysis.GenericRecordType == "sop" ? "sop_general" : "sop";
-            retrievalSource = "postgres_record_type";
+            retrievalSource = "qdrant_payload";
             contextLimit = 5;
         }
         else if (analysis.IsProfileQuery)
         {
-            chunks = await _chunkRepository.SearchByRecordTypeAsync(
+            chunks = await SearchQdrantRecordTypeAsync(
                 "profile",
                 analysis.ProfileKeyword,
                 5);
 
             if (!chunks.Any() && !string.IsNullOrWhiteSpace(analysis.ProfileKeyword))
             {
-                chunks = await _chunkRepository.SearchByRecordTypeAsync(
-                    "profile",
-                    "",
-                    5);
+                chunks = await SearchQdrantRecordTypeAsync("profile", 5);
             }
 
             retrievalMode = "profile";
-            retrievalSource = "postgres_record_type";
+            retrievalSource = "qdrant_payload";
             contextLimit = 5;
         }
         else
@@ -247,11 +238,11 @@ public class RetrievalService
                 .Where(x => x.Similarity >= MinimumSemanticSimilarity)
                 .ToList();
 
-            chunks = await GetSemanticChunksFromRepositoryAsync(vectorHits);
+            chunks = GetSemanticChunksFromQdrantPayload(vectorHits);
             chunks = FilterSemanticContext(analysis, chunks);
 
             retrievalMode = "semantic";
-            retrievalSource = "qdrant_vector_then_postgres";
+            retrievalSource = "qdrant_vector_payload";
             contextLimit = SemanticContextLimit;
         }
 
@@ -370,6 +361,68 @@ public class RetrievalService
             limit);
     }
 
+    private async Task<List<RetrievedChunk>> SearchQdrantRecordTypeAsync(
+        string recordType,
+        int limit)
+    {
+        var chunks = await _qdrantService.SearchByRecordTypeAsync(recordType, limit);
+
+        return NormalizeQdrantRecordTypeChunks(recordType, chunks);
+    }
+
+    private async Task<List<RetrievedChunk>> SearchQdrantRecordTypeAsync(
+        string recordType,
+        string keyword,
+        int limit)
+    {
+        var chunks = await _qdrantService.SearchByRecordTypeAsync(recordType, keyword, limit);
+
+        return NormalizeQdrantRecordTypeChunks(recordType, chunks);
+    }
+
+    private List<RetrievedChunk> NormalizeQdrantRecordTypeChunks(
+        string recordType,
+        List<RetrievedChunk> chunks)
+    {
+        if (!chunks.Any())
+        {
+            return chunks;
+        }
+
+        var chunksWithPayload = chunks
+            .Where(HasQdrantPayload)
+            .ToList();
+
+        if (chunksWithPayload.Count != chunks.Count)
+        {
+            _logger.LogWarning(
+                "Qdrant recordType payload missing. Re-ingest required. recordType={RecordType}, hits={HitCount}, withPayload={PayloadCount}",
+                recordType,
+                chunks.Count,
+                chunksWithPayload.Count);
+        }
+
+        return chunksWithPayload
+            .GroupBy(GetQdrantRecordDedupKey)
+            .Select(x => x.First())
+            .ToList();
+    }
+
+    private static string GetQdrantRecordDedupKey(RetrievedChunk chunk)
+    {
+        if (chunk.Id != Guid.Empty)
+        {
+            return chunk.Id.ToString();
+        }
+
+        if (chunk.DocumentId != Guid.Empty && chunk.ChunkIndex.HasValue)
+        {
+            return $"{chunk.DocumentId}:{chunk.ChunkIndex.Value}";
+        }
+
+        return $"{chunk.DocumentTitle}:{chunk.ChunkIndex?.ToString() ?? "-"}";
+    }
+
     private static string BuildRetrievalMode(
         StructuredEntityMatch entity,
         RagQueryAnalysis analysis)
@@ -404,7 +457,7 @@ public class RetrievalService
             : 5;
     }
 
-    private async Task<List<RetrievedChunk>> GetSemanticChunksFromRepositoryAsync(
+    private List<RetrievedChunk> GetSemanticChunksFromQdrantPayload(
         List<RetrievedChunk> vectorHits)
     {
         if (!vectorHits.Any())
@@ -412,34 +465,24 @@ public class RetrievalService
             return new List<RetrievedChunk>();
         }
 
-        var ids = vectorHits
-            .Select(x => x.Id)
-            .Where(x => x != Guid.Empty)
+        var chunksWithPayload = vectorHits
+            .Where(HasQdrantPayload)
             .ToList();
 
-        if (!ids.Any())
+        if (chunksWithPayload.Count != vectorHits.Count)
         {
-            return new List<RetrievedChunk>();
+            _logger.LogWarning(
+                "Qdrant semantic result missing payload. Re-ingest required. hits={HitCount}, withPayload={PayloadCount}",
+                vectorHits.Count,
+                chunksWithPayload.Count);
         }
 
-        var scoreMap = vectorHits
-            .Where(x => x.Id != Guid.Empty)
-            .GroupBy(x => x.Id)
-            .ToDictionary(x => x.Key, x => x.First().Similarity);
+        return chunksWithPayload;
+    }
 
-        var dbChunks = await _chunkRepository.GetChunksByIdsAsync(ids);
-
-        foreach (var chunk in dbChunks)
-        {
-            if (scoreMap.TryGetValue(chunk.Id, out var score))
-            {
-                chunk.Similarity = score;
-            }
-        }
-
-        return dbChunks
-            .Where(x => scoreMap.ContainsKey(x.Id))
-            .ToList();
+    private static bool HasQdrantPayload(RetrievedChunk chunk)
+    {
+        return !string.IsNullOrWhiteSpace(chunk.Content);
     }
 
     private List<RetrievedChunk> FilterSemanticContext(

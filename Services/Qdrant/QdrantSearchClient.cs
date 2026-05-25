@@ -38,7 +38,8 @@ public class QdrantSearchClient
         {
             vector = queryEmbedding,
             limit,
-            with_payload = false
+            with_payload = true,
+            with_vector = false
         };
 
         var response = await _httpClient.PostAsync(
@@ -197,6 +198,13 @@ public class QdrantSearchClient
         var filter = _filterBuilder.BuildPayloadFilter("recordType", NormalizeRecordType(recordType));
 
         return await _scrollClient.ScrollByFilterAsync(filter, keyword, limit);
+    }
+
+    public async Task<List<RetrievedChunk>> SearchByRecordTypeAsync(
+        string recordType,
+        int limit = 10)
+    {
+        return await SearchByRecordTypeAsync(recordType, "", limit);
     }
 
     public static string NormalizeKeyword(string value)

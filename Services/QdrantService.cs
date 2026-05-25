@@ -45,6 +45,13 @@ public class QdrantService
             department);
     }
 
+    public async Task UpsertChunkAsync(
+        RetrievedChunk chunk,
+        List<float> embedding)
+    {
+        await _pointWriter.UpsertChunkAsync(chunk, embedding);
+    }
+
     public async Task<List<RetrievedChunk>> SearchAsync(
         List<float> queryEmbedding,
         int limit = 10)
@@ -142,6 +149,13 @@ public class QdrantService
         int limit = 10)
     {
         return await _searchClient.SearchByRecordTypeAsync(recordType, keyword, limit);
+    }
+
+    public async Task<List<RetrievedChunk>> SearchByRecordTypeAsync(
+        string recordType,
+        int limit = 10)
+    {
+        return await _searchClient.SearchByRecordTypeAsync(recordType, limit);
     }
 
     public async Task<List<RetrievedChunk>> SearchByKeywordAsync(
