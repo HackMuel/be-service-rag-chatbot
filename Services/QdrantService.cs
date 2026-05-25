@@ -93,6 +93,11 @@ public class QdrantService
         return await _searchClient.SearchByPayloadFilterAsync(filters, limit);
     }
 
+    public async Task<List<StructuredEntityMatch>> GetKnownStructuredEntitiesAsync()
+    {
+        return await _searchClient.GetKnownStructuredEntitiesAsync();
+    }
+
     public async Task<List<RetrievedChunk>> SearchEmployeesByDivisionAsync(string division, int limit = 50)
     {
         return await _searchClient.SearchEmployeesByDivisionAsync(division, limit);

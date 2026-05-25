@@ -16,7 +16,7 @@ builder.Services.AddScoped<IngestionService>();
 builder.Services.AddSingleton<QueryAnalyzerService>();
 builder.Services.AddSingleton<AnswerFormatterService>();
 builder.Services.AddSingleton<PromptBuilderService>();
-builder.Services.AddScoped<StructuredEntityResolver>();
+builder.Services.AddSingleton<StructuredEntityResolver>();
 builder.Services.AddScoped<RetrievalService>();
 builder.Services.AddScoped<PdfTextExtractor>();
 builder.Services.AddScoped<TextNormalizer>();

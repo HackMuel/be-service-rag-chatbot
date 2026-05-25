@@ -100,6 +100,11 @@ public class QdrantSearchClient
         return await _scrollClient.ScrollByFilterAsync(filter, "", limit);
     }
 
+    public async Task<List<StructuredEntityMatch>> GetKnownStructuredEntitiesAsync()
+    {
+        return await _scrollClient.GetKnownStructuredEntitiesAsync();
+    }
+
     public async Task<List<RetrievedChunk>> SearchEmployeesByDivisionAsync(string division, int limit = 50)
     {
         return await SearchByPayloadFilterAsync(new Dictionary<string, string>

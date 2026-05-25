@@ -1,11 +1,12 @@
 using System.Text.RegularExpressions;
 using be_service.Models;
-using be_service.Repositories;
 
 namespace be_service.Services;
 
 public class StructuredEntityResolver
 {
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
+
     private static readonly HashSet<string> GenericValues = new(StringComparer.OrdinalIgnoreCase)
     {
         "data",
@@ -33,14 +34,17 @@ public class StructuredEntityResolver
         "nggak"
     };
 
-    private readonly ChunkRepository _chunkRepository;
+    private readonly QdrantService _qdrantService;
     private readonly ILogger<StructuredEntityResolver> _logger;
+    private readonly SemaphoreSlim _cacheLock = new(1, 1);
+    private List<StructuredEntityMatch> _cachedKnownEntities = new();
+    private DateTimeOffset _cacheExpiresAt = DateTimeOffset.MinValue;
 
     public StructuredEntityResolver(
-        ChunkRepository chunkRepository,
+        QdrantService qdrantService,
         ILogger<StructuredEntityResolver> logger)
     {
-        _chunkRepository = chunkRepository;
+        _qdrantService = qdrantService;
         _logger = logger;
     }
 
@@ -55,7 +59,7 @@ public class StructuredEntityResolver
             return null;
         }
 
-        var knownEntities = await _chunkRepository.GetKnownStructuredEntitiesAsync();
+        var knownEntities = await GetKnownEntitiesAsync();
 
         var exactMatch = knownEntities
             .Select(entity => BuildMatch(entity, normalizedQuestion, analysis))
@@ -84,6 +88,62 @@ public class StructuredEntityResolver
         }
 
         return bestMatch;
+    }
+
+    public void ClearCache()
+    {
+        _cachedKnownEntities = new List<StructuredEntityMatch>();
+        _cacheExpiresAt = DateTimeOffset.MinValue;
+    }
+
+    private async Task<List<StructuredEntityMatch>> GetKnownEntitiesAsync()
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        if (_cachedKnownEntities.Any() && _cacheExpiresAt > now)
+        {
+            _logger.LogInformation(
+                "STRUCTURED_ENTITY_RESOLVER source=qdrant_payload_cache count={EntityCount}",
+                _cachedKnownEntities.Count);
+
+            return _cachedKnownEntities;
+        }
+
+        await _cacheLock.WaitAsync();
+
+        try
+        {
+            now = DateTimeOffset.UtcNow;
+
+            if (_cachedKnownEntities.Any() && _cacheExpiresAt > now)
+            {
+                _logger.LogInformation(
+                    "STRUCTURED_ENTITY_RESOLVER source=qdrant_payload_cache count={EntityCount}",
+                    _cachedKnownEntities.Count);
+
+                return _cachedKnownEntities;
+            }
+
+            var knownEntities = await _qdrantService.GetKnownStructuredEntitiesAsync();
+            _cachedKnownEntities = knownEntities;
+            _cacheExpiresAt = now.Add(CacheTtl);
+
+            _logger.LogInformation(
+                "STRUCTURED_ENTITY_RESOLVER source=qdrant_payload_refresh count={EntityCount}",
+                knownEntities.Count);
+
+            if (!knownEntities.Any())
+            {
+                _logger.LogWarning(
+                    "Structured entities not found in Qdrant payload. Re-ingest required.");
+            }
+
+            return _cachedKnownEntities;
+        }
+        finally
+        {
+            _cacheLock.Release();
+        }
     }
 
     private static StructuredEntityMatch? BuildMatch(

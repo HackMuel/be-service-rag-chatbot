@@ -7,6 +7,20 @@ namespace be_service.Services;
 
 public class QdrantScrollClient
 {
+    private static readonly string[] StructuredEntityFields =
+    {
+        "name",
+        "division",
+        "position",
+        "shift",
+        "employeeStatus",
+        "approval",
+        "maintenanceStatus",
+        "location",
+        "equipment",
+        "technician"
+    };
+
     private readonly HttpClient _httpClient;
     private readonly ILogger<QdrantScrollClient> _logger;
 
@@ -73,6 +87,83 @@ public class QdrantScrollClient
         }
 
         return results;
+    }
+
+    public async Task<List<StructuredEntityMatch>> GetKnownStructuredEntitiesAsync()
+    {
+        var entities = new Dictionary<string, StructuredEntityMatch>(StringComparer.OrdinalIgnoreCase);
+        string? offset = null;
+
+        while (true)
+        {
+            var body = new Dictionary<string, object?>
+            {
+                ["limit"] = QdrantConstants.PageSize,
+                ["with_payload"] = true,
+                ["with_vector"] = false
+            };
+
+            if (!string.IsNullOrWhiteSpace(offset))
+            {
+                body["offset"] = offset;
+            }
+
+            var response = await _httpClient.PostAsync(
+                $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/points/scroll",
+                new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
+            );
+
+            await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Qdrant structured entity scroll");
+
+            var resultJson = await response.Content.ReadAsStringAsync();
+
+            using var doc = JsonDocument.Parse(resultJson);
+            var result = doc.RootElement.GetProperty("result");
+
+            foreach (var item in result.GetProperty("points").EnumerateArray())
+            {
+                if (!item.TryGetProperty("payload", out var payload) ||
+                    payload.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                var recordType = RetrievedChunkMapper.GetPayloadString(payload, "recordType");
+
+                foreach (var fieldName in StructuredEntityFields)
+                {
+                    var value = RetrievedChunkMapper.GetPayloadString(payload, fieldName);
+
+                    if (string.IsNullOrWhiteSpace(value))
+                        continue;
+
+                    var key = $"{fieldName}|{value}|{recordType}";
+
+                    entities.TryAdd(
+                        key,
+                        new StructuredEntityMatch
+                        {
+                            FieldName = fieldName,
+                            Value = value,
+                            RecordType = recordType,
+                            Priority = value.Length
+                        });
+                }
+            }
+
+            offset = GetNextPageOffset(result);
+
+            if (string.IsNullOrWhiteSpace(offset))
+            {
+                break;
+            }
+        }
+
+        return entities
+            .Values
+            .OrderByDescending(x => x.Value.Length)
+            .ThenBy(x => x.FieldName)
+            .ToList();
     }
 
     public async Task<List<RetrievedChunk>> ScrollByFilterAsync(
