@@ -17,6 +17,11 @@ builder.Services.AddSingleton<QueryAnalyzerService>();
 builder.Services.AddSingleton<AnswerFormatterService>();
 builder.Services.AddSingleton<PromptBuilderService>();
 builder.Services.AddSingleton<StructuredEntityResolver>();
+builder.Services.Configure<ObjectStorageOptions>(
+    builder.Configuration.GetSection("ObjectStorage"));
+builder.Services.Configure<StorageModeOptions>(
+    builder.Configuration.GetSection("StorageMode"));
+builder.Services.AddScoped<ObjectStorageService>();
 builder.Services.AddScoped<RetrievalService>();
 builder.Services.AddScoped<PdfTextExtractor>();
 builder.Services.AddScoped<TextNormalizer>();
@@ -77,19 +82,19 @@ app.MapPost("/api/upload-txt", async (
         return Results.BadRequest("File kosong");
     }
 
-    using var reader = new StreamReader(file.OpenReadStream());
+    Guid documentId;
 
-    var content = await reader.ReadToEndAsync();
-
-    var request = new IngestRequest
+    try
     {
-        Title = file.FileName,
-        Department = "General",
-        Content = content
-    };
-
-    var documentId =
-        await ingestionService.IngestAsync(request);
+        documentId = await ingestionService.IngestTxtAsync(file);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(
+            title: "TXT upload failed",
+            detail: ex.Message,
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
 
     return Results.Ok(new
     {
@@ -113,8 +118,19 @@ app.MapPost("/api/upload-pdf", async (
         return Results.BadRequest("File harus PDF");
     }
 
-    var documentId =
-        await ingestionService.IngestPdfAsync(file);
+    Guid documentId;
+
+    try
+    {
+        documentId = await ingestionService.IngestPdfAsync(file);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(
+            title: "PDF upload failed",
+            detail: ex.Message,
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
 
     return Results.Ok(new
     {

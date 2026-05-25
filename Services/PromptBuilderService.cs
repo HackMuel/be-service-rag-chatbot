@@ -1,4 +1,5 @@
 using be_service.Models;
+using System.Text.RegularExpressions;
 
 namespace be_service.Services;
 
@@ -18,9 +19,14 @@ ATURAN:
 - Jangan menambahkan informasi di luar CONTEXT.
 - Jika informasi tidak ada di context, katakan:
   'Maaf, saya tidak menemukan informasi tersebut.'
+- Jangan menulis pembuka seperti ""Berikut adalah jawaban berdasarkan context"".
+- Jangan menambahkan penutup seperti ""Jika ada pertanyaan lain"".
+- Jangan mengulang poin yang sama dengan kata-kata berbeda.
+- Untuk pertanyaan semantic/rangkuman/risiko/prosedur, jawab maksimal 4-6 bullet.
+- Jika CONTEXT berisi SOP dan audit, gabungkan menjadi jawaban terstruktur yang ringkas; jangan pisahkan menjadi narasi berulang.
 - Jangan mengubah nama unit, NIK, kode, angka, tanggal, status, atau nilai yang ada di context.
 - Jangan membahas bahwa dokumen adalah dummy, fiktif, simulasi, AI, NLP, chatbot, atau enterprise system kecuali user secara eksplisit bertanya tentang sifat dokumen.
-- Jika CONTEXT berisi disclaimer seperti data dummy/fiktif, simulasi sistem AI, atau pengembangan chatbot, abaikan bagian itu kecuali user bertanya tentang sifat dokumen.
+- Jika CONTEXT berisi disclaimer seperti data dummy/fiktif, simulasi sistem AI, pengembangan chatbot, atau data contoh, abaikan bagian itu kecuali user bertanya apakah data asli.
 - Jangan memberi saran eksternal seperti ""konsultasikan ke divisi"" kecuali tertulis di CONTEXT.
 - Jangan membuat istilah baru.
 - Jangan menerjemahkan singkatan teknis yang sudah ada. Contoh: APD tetap APD.
@@ -40,6 +46,7 @@ ATURAN:
 - Jangan menambahkan informasi yang tidak tertulis di context.
 - Untuk pertanyaan risiko, keselamatan, pengawasan, operasional, prosedur, atau insiden, prioritaskan poin yang relevan: APD, larangan perangkat elektronik non-sertifikasi, pemeriksaan kartu akses, safety briefing shift malam, akses terbatas area tangki, batas kecepatan kendaraan, simulasi evakuasi kebakaran, kepatuhan APD, pelanggaran minor, dan CCTV thermal jika tersedia di CONTEXT.
 - Jawab singkat, jelas, profesional, dan langsung ke pertanyaan user.
+- Jika harus memakai bullet, gunakan format ""- "" dan jangan lebih dari 6 bullet.
 
 =====================
 CONTEXT:
@@ -63,6 +70,11 @@ Kamu menjawab pertanyaan kebijakan/aturan internal perusahaan.
 ATURAN:
 - Jawab hanya berdasarkan CONTEXT.
 - Jangan membuat informasi, izin, pengecualian, atau aturan baru.
+- Jangan menulis pembuka seperti ""Berikut adalah jawaban berdasarkan context"".
+- Jangan menambahkan penutup seperti ""Jika ada pertanyaan lain"".
+- Jangan mengulang poin yang sama.
+- Gunakan jawaban singkat; jika perlu bullet, maksimal 4-6 poin.
+- Jangan menyebut disclaimer dummy/fiktif/simulasi kecuali user bertanya apakah data asli.
 - Jangan membuat istilah baru.
 - Jangan menerjemahkan singkatan teknis yang sudah ada. Contoh: APD tetap APD.
 - Jika CONTEXT menggunakan kata ""hanya"", pihak yang tidak disebut dalam daftar tersebut dianggap tidak diperbolehkan berdasarkan context.
@@ -98,8 +110,48 @@ SectionTitle: {ValueOrFallback(x.SectionTitle, ChunkMetadataExtractor.ExtractSec
 Similarity: {x.Similarity:F2}
 ChunkIndex: {(x.ChunkIndex.HasValue ? x.ChunkIndex.Value.ToString() : "-")}
 Content:
-{x.Content}"
+{CleanContextForLlm(x.Content)}"
             ));
+    }
+
+    private static string CleanContextForLlm(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return "";
+        }
+
+        var cleanedSegments = SplitContextSegments(content)
+            .Select(x => x.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Where(x => !IsNoiseDisclaimer(x))
+            .ToList();
+
+        if (!cleanedSegments.Any())
+        {
+            return content;
+        }
+
+        return string.Join("\n", cleanedSegments);
+    }
+
+    private static IEnumerable<string> SplitContextSegments(string content)
+    {
+        return Regex.Split(
+            content,
+            @"(?<=[.!?])\s+|\r?\n+");
+    }
+
+    private static bool IsNoiseDisclaimer(string value)
+    {
+        return ContainsAny(
+            value,
+            "dummy",
+            "fiktif",
+            "simulasi sistem",
+            "tidak merepresentasikan data asli",
+            "data contoh",
+            "pengembangan chatbot enterprise");
     }
 
     private static string ResolveRecordType(RetrievedChunk chunk)
@@ -115,5 +167,11 @@ Content:
             return value;
 
         return string.IsNullOrWhiteSpace(fallback) ? "-" : fallback;
+    }
+
+    private static bool ContainsAny(string value, params string[] keywords)
+    {
+        return keywords.Any(keyword =>
+            value.Contains(keyword, StringComparison.OrdinalIgnoreCase));
     }
 }

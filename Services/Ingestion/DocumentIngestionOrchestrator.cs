@@ -1,5 +1,6 @@
 using be_service.Models;
 using be_service.Repositories;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace be_service.Services;
@@ -12,6 +13,8 @@ public class DocumentIngestionOrchestrator
     private readonly EmbeddingIngestionService _embeddingIngestionService;
     private readonly QdrantService _qdrantService;
     private readonly ChunkRepository _chunkRepository;
+    private readonly StorageModeOptions _storageModeOptions;
+    private readonly ILogger<DocumentIngestionOrchestrator> _logger;
 
     public DocumentIngestionOrchestrator(
         IConfiguration configuration,
@@ -19,7 +22,9 @@ public class DocumentIngestionOrchestrator
         ChunkingService chunkingService,
         EmbeddingIngestionService embeddingIngestionService,
         QdrantService qdrantService,
-        ChunkRepository chunkRepository)
+        ChunkRepository chunkRepository,
+        IOptions<StorageModeOptions> storageModeOptions,
+        ILogger<DocumentIngestionOrchestrator> logger)
     {
         _configuration = configuration;
         _textNormalizer = textNormalizer;
@@ -27,6 +32,8 @@ public class DocumentIngestionOrchestrator
         _embeddingIngestionService = embeddingIngestionService;
         _qdrantService = qdrantService;
         _chunkRepository = chunkRepository;
+        _storageModeOptions = storageModeOptions.Value;
+        _logger = logger;
     }
 
     public async Task<Guid> IngestAsync(IngestRequest request)
@@ -54,6 +61,8 @@ public class DocumentIngestionOrchestrator
             documentId = (Guid)(await cmd.ExecuteScalarAsync())!;
         }
 
+        await TryUpdateDocumentStorageMetadataAsync(conn, documentId, request);
+
         var normalizedContent = _textNormalizer.Normalize(request.Content);
         var chunks = _chunkingService.SplitBySections(normalizedContent);
         Console.WriteLine($"TOTAL CHUNKS: {chunks.Count}");
@@ -63,6 +72,10 @@ public class DocumentIngestionOrchestrator
             Console.WriteLine(
                 $"CHUNK {i}: type={ChunkMetadataExtractor.DetectRecordType(chunks[i])}, length={chunks[i].Length}");
         }
+
+        _logger.LogInformation(
+            "INGESTION_STORAGE_MODE writeDocumentChunksToPostgres={WriteDocumentChunksToPostgres}",
+            _storageModeOptions.WriteDocumentChunksToPostgres);
 
         for (int i = 0; i < chunks.Count; i++)
         {
@@ -75,7 +88,10 @@ public class DocumentIngestionOrchestrator
                 chunks[i],
                 i);
 
-            await _chunkRepository.InsertChunkAsync(chunk);
+            if (_storageModeOptions.WriteDocumentChunksToPostgres)
+            {
+                await _chunkRepository.InsertChunkAsync(chunk);
+            }
 
             var embedding = await _embeddingIngestionService.GenerateEmbeddingAsync(chunks[i]);
 
@@ -85,6 +101,43 @@ public class DocumentIngestionOrchestrator
         }
 
         return documentId;
+    }
+
+    private async Task TryUpdateDocumentStorageMetadataAsync(
+        NpgsqlConnection conn,
+        Guid documentId,
+        IngestRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.StorageBucket) ||
+            string.IsNullOrWhiteSpace(request.StorageObjectKey))
+        {
+            return;
+        }
+
+        const string updateDocumentStorageSql = @"
+            update documents
+            set
+                storage_bucket = @storage_bucket,
+                storage_object_key = @storage_object_key,
+                content_type = @content_type
+            where id = @id;
+        ";
+
+        try
+        {
+            await using var cmd = new NpgsqlCommand(updateDocumentStorageSql, conn);
+            cmd.Parameters.AddWithValue("id", documentId);
+            cmd.Parameters.AddWithValue("storage_bucket", request.StorageBucket);
+            cmd.Parameters.AddWithValue("storage_object_key", request.StorageObjectKey);
+            cmd.Parameters.AddWithValue("content_type", request.ContentType);
+
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedColumn)
+        {
+            _logger.LogWarning(
+                "Document storage metadata columns are missing. Run Sql/add_object_storage_columns.sql to persist object storage metadata.");
+        }
     }
 
     private static RetrievedChunk CreateRetrievedChunk(

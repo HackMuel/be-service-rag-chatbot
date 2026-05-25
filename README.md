@@ -1,43 +1,47 @@
-# Internal RAG Chatbot Backend - .NET, Supabase, Qdrant, Ollama
+# Internal RAG Chatbot Backend - .NET, Qdrant, MinIO, Ollama
 
 ## 1. Deskripsi Singkat
 
-Project ini adalah backend chatbot RAG internal perusahaan untuk mencari dan menjawab informasi dari dokumen internal. Backend menggunakan pendekatan hybrid retrieval: exact/filter lookup untuk data terstruktur, deterministic template untuk pertanyaan yang pasti, dan grounded LLM untuk pertanyaan fleksibel yang membutuhkan pemahaman konteks.
+Project ini adalah backend chatbot RAG internal perusahaan untuk mencari dan menjawab informasi dari dokumen PDF/TXT. Backend menggunakan arsitektur Qdrant-centric: file asli disimpan di Object Storage/MinIO, chunk content dan metadata retrieval disimpan di payload Qdrant, sedangkan PostgreSQL/Supabase dipakai sebagai document registry dan metadata administratif.
 
-Sistem dirancang on-premise/local-first:
+Sistem memakai hybrid RAG 3 level:
 
-- Supabase/PostgreSQL menjadi source of truth untuk dokumen, chunk content, dan metadata.
-- Qdrant menjadi vector index untuk semantic search, dengan point id yang sama seperti `document_chunks.id`.
-- Ollama digunakan secara lokal untuk embedding dan LLM generation.
-- Frontend React berkomunikasi melalui API backend .NET Minimal API.
+- Level 1 Exact/Structured Retrieval untuk data terstruktur.
+- Level 2 Deterministic Template untuk pertanyaan pasti dan sering.
+- Level 3 Grounded Semantic/Policy Answer untuk pertanyaan fleksibel yang membutuhkan context dan LLM.
+
+Tujuan utama sistem adalah menjawab berdasarkan dokumen internal, bukan berdasarkan pengetahuan bebas model.
 
 ## 2. Tujuan Project
 
-Tujuan utama project ini:
+Tujuan project:
 
 - Membantu pencarian informasi internal perusahaan dari dokumen PDF/TXT.
-- Menjawab pertanyaan berdasarkan context dokumen, bukan dari pengetahuan bebas model.
-- Mengurangi hallucination dengan memisahkan exact retrieval, deterministic answer, dan semantic RAG.
-- Menyediakan arsitektur RAG yang lebih production-like: PostgreSQL sebagai source of truth dan Qdrant sebagai vector-only index.
-- Mendukung retrieval data karyawan, SOP, audit, maintenance, rekap lembur, dan profil perusahaan.
+- Mendukung pertanyaan tentang data karyawan, rekap lembur, log maintenance, SOP, audit, dan profil perusahaan.
+- Mengurangi hallucination dengan memisahkan exact retrieval, deterministic answer, dan grounded LLM.
+- Membuat chat query path lebih sederhana: user query -> Qdrant -> formatter/LLM.
+- Menjadikan PostgreSQL/Supabase sebagai document registry/admin metadata, bukan retrieval chunk utama.
+- Menyimpan file asli di Object Storage agar ingestion dan audit dokumen lebih production-like.
 
 ## 3. Tech Stack
 
 | Komponen | Teknologi |
 |---|---|
-| Backend API | .NET / ASP.NET Core Minimal API |
+| Backend API | ASP.NET Core / .NET Minimal API |
 | Bahasa | C# |
-| Database utama | Supabase/PostgreSQL |
-| Vector database | Qdrant |
-| Embedding lokal | Ollama `nomic-embed-text` |
-| LLM lokal | Ollama `qwen2.5:1.5b` |
-| PDF extraction | UglyToad.PdfPig |
+| Document registry | PostgreSQL/Supabase local |
+| Retrieval store | Qdrant vector database |
+| File storage | MinIO Object Storage |
+| Embedding lokal | Ollama |
+| LLM lokal | Ollama |
 | PostgreSQL driver | Npgsql |
+| Object storage SDK | MinIO .NET SDK |
+| PDF extraction | UglyToad.PdfPig / iText |
 | Frontend | React, repository terpisah |
 | File ingestion | PDF/TXT |
-| Local services | Qdrant dan Ollama, via Docker
 
 ## 4. High-Level Architecture
+
 ```text
 Frontend React
     |
@@ -51,19 +55,19 @@ RagChatService
 QueryAnalyzerService
     |
     v
+StructuredEntityResolver
+    |  (known entities dari Qdrant payload cache jika dibutuhkan)
+    v
 RetrievalService
     |
-    +--> Supabase/PostgreSQL
-    |       - documents
-    |       - document_chunks
-    |
     +--> Qdrant
-    |       - vector index
-    |       - point id = chunk id
+    |       - vector embedding
+    |       - chunk content
+    |       - metadata payload
     |
     +--> Ollama
-            - embedding
-            - LLM generation
+    |       - embedding
+    |       - LLM generation jika diperlukan
     |
     v
 AnswerFormatterService / PromptBuilderService
@@ -72,18 +76,49 @@ AnswerFormatterService / PromptBuilderService
 ChatResponse
 ```
 
+Komponen pendukung:
+
+```text
+Upload PDF/TXT
+    |
+    v
+MinIO/Object Storage
+    |
+    v
+documents table di PostgreSQL/Supabase
+    |
+    v
+Ingestion pipeline
+    |
+    v
+Qdrant vector + payload
+```
+
 Peran utama:
 
-- Supabase/PostgreSQL: source of truth untuk dokumen, chunk content, dan metadata.
-- Qdrant: semantic vector index. Qdrant tidak lagi menjadi tempat utama content/metadata.
-- Ollama: membuat embedding dan menghasilkan jawaban LLM jika deterministic answer tidak cukup.
-- Object Storage: rencana production untuk menyimpan file asli PDF/TXT, misalnya MinIO atau Supabase Storage.
+- MinIO/Object Storage: menyimpan file asli PDF/TXT.
+- PostgreSQL/Supabase: menyimpan registry dokumen dan metadata administratif.
+- Qdrant: retrieval store utama untuk chunk content, metadata payload, dan vector embedding.
+- Ollama: membuat embedding dan menjalankan LLM lokal.
+- React frontend: client yang memanggil endpoint backend.
 
 ## 5. Data Architecture
 
+### Object Storage / MinIO
+
+Object Storage menyimpan file asli yang di-upload user.
+
+Contoh object key:
+
+```text
+documents/{documentId}/{safeFileName}
+```
+
+Object Storage dipakai agar file asli tetap tersedia untuk audit, reprocessing, atau re-ingestion.
+
 ### Tabel `documents`
 
-Menyimpan metadata dokumen.
+Tabel ini menyimpan registry dokumen dan metadata administratif.
 
 Kolom utama:
 
@@ -92,29 +127,44 @@ Kolom utama:
 - `source_type`
 - `file_name`
 - `department`
+- `storage_bucket`
+- `storage_object_key`
+- `content_type`
 - `created_at`
+
+Kolom object storage ditambahkan melalui:
+
+```text
+Sql/add_object_storage_columns.sql
+```
 
 ### Tabel `document_chunks`
 
-Menyimpan chunk content dan metadata. Tabel ini adalah source of truth untuk retrieval context.
+`document_chunks` sekarang bersifat optional/legacy/debug.
 
-Kolom utama:
+Jika konfigurasi berikut bernilai `true`, chunk juga ditulis ke PostgreSQL:
 
-- `id uuid`
-- `document_id uuid`
-- `chunk_index int`
-- `content text`
-- `metadata jsonb`
-- `created_at timestamptz`
-
-Prinsip penting:
-
-```text
-document_chunks.id = Qdrant point id
+```json
+"StorageMode": {
+  "WriteDocumentChunksToPostgres": true
+}
 ```
 
-Metadata JSONB menyimpan field seperti:
+Jika bernilai `false`, ingestion tetap menyimpan file ke MinIO, registry ke `documents`, dan chunk retrieval ke Qdrant, tetapi tidak mengisi `document_chunks`.
 
+### Qdrant
+
+Qdrant adalah retrieval store utama. Setiap point menyimpan:
+
+- point id / chunk id
+- vector embedding
+- payload lengkap
+
+Payload Qdrant berisi:
+
+- `documentId`
+- `documentTitle`
+- `content`
 - `recordType`
 - `nik`
 - `name`
@@ -133,16 +183,30 @@ Metadata JSONB menyimpan field seperti:
 - `maintenanceStatus`
 - `technician`
 - `sectionTitle`
-- `documentTitle`
+- `chunkIndex`
 
-### Qdrant
+Contoh point:
 
-Qdrant menyimpan:
-
-- point id / chunk id
-- vector embedding
-
-Qdrant tidak menjadi source of truth untuk content dan metadata. Setelah semantic search, backend mengambil `chunkId` dari Qdrant lalu membaca chunk lengkap dari Supabase/PostgreSQL.
+```json
+{
+  "id": "chunk-guid",
+  "vector": [0.01, 0.02, 0.03],
+  "payload": {
+    "documentId": "document-guid",
+    "documentTitle": "Dummy_Data_Internal_Pertamina_RUVI_Balongan.pdf",
+    "content": "Data Karyawan ...",
+    "recordType": "employee",
+    "nik": "RU6-1030",
+    "name": "Budi Santoso",
+    "nameNormalized": "BUDI SANTOSO",
+    "division": "Human Capital",
+    "position": "Staff",
+    "shift": "B",
+    "employeeStatus": "Tetap",
+    "chunkIndex": 12
+  }
+}
+```
 
 ## 6. Workflow Upload / Ingestion
 
@@ -151,6 +215,12 @@ User upload PDF/TXT
     |
     v
 Backend validate file
+    |
+    v
+Object Storage / MinIO menyimpan file asli
+    |
+    v
+documents table menyimpan registry dokumen
     |
     v
 Extract text
@@ -162,30 +232,34 @@ Normalize text
 Chunking
     |
     v
-Save chunk + metadata to Supabase document_chunks
+Metadata extraction
     |
     v
-Generate embedding via Ollama
+Ollama embedding
     |
     v
-Upsert vector to Qdrant using the same chunkId
+Qdrant upsert vector + payload
+    |
+    v
+document_chunks optional jika StorageMode.WriteDocumentChunksToPostgres=true
 ```
 
 Service yang terlibat:
 
 | Service | Tanggung jawab |
 |---|---|
-| `IngestionService` | Entry point ingestion dari endpoint upload/API |
-| `PdfTextExtractor` | Extract text dari file PDF menggunakan PdfPig |
+| `IngestionService` | Entry point upload PDF/TXT dari endpoint |
+| `ObjectStorageService` | Menyimpan file asli ke MinIO dan memastikan bucket tersedia |
+| `PdfTextExtractor` | Extract text dari PDF |
 | `TextNormalizer` | Membersihkan dan menormalisasi text hasil extraction |
-| `ChunkingService` | Memecah text menjadi chunks sesuai section/structured row |
+| `ChunkingService` | Memecah text menjadi chunks |
+| `ChunkMetadataExtractor` | Extract metadata dari content chunk |
 | `DocumentIngestionOrchestrator` | Mengatur flow ingestion end-to-end |
-| `EmbeddingIngestionService` | Memanggil embedding model melalui Ollama |
-| `ChunkRepository` | Menyimpan chunk content dan metadata ke Supabase/PostgreSQL |
-| `QdrantPointWriter` | Menyimpan vector embedding ke Qdrant |
-| `OllamaService` | Client untuk embedding dan LLM lokal |
+| `EmbeddingIngestionService` | Memanggil embedding model via Ollama |
+| `QdrantPointWriter` | Upsert vector + payload lengkap ke Qdrant |
+| `ChunkRepository` | Optional legacy write ke `document_chunks` jika storage mode aktif |
 
-Structured data seperti karyawan, lembur, dan maintenance diproses menjadi 1 row = 1 chunk agar exact/filter retrieval lebih akurat.
+Structured data seperti karyawan, lembur, dan maintenance diproses menjadi 1 row = 1 chunk agar exact/filter retrieval akurat.
 
 ## 7. Workflow Chat / Question Answering
 
@@ -199,13 +273,20 @@ RagChatService
 QueryAnalyzerService
     |
     v
+StructuredEntityResolver
+    |  (Qdrant payload cache jika query butuh known entity)
+    v
 RetrievalService
+    |
+    +--> Qdrant payload filter
+    |
+    +--> Qdrant vector search with payload
     |
     v
 AnswerFormatterService or PromptBuilderService
     |
     v
-Ollama if needed
+Ollama LLM jika diperlukan
     |
     v
 ChatResponse
@@ -215,38 +296,44 @@ Penjelasan:
 
 1. Frontend mengirim pertanyaan ke `/api/chat`.
 2. `RagChatService` menjadi orchestrator utama.
-3. `QueryAnalyzerService` menganalisis intent pertanyaan.
-4. `RetrievalService` memilih strategi retrieval.
-5. `AnswerFormatterService` mencoba menjawab secara deterministic.
-6. Jika deterministic answer tidak tersedia, `PromptBuilderService` membuat prompt grounded.
-7. `OllamaService` memanggil LLM lokal.
-8. Backend mengembalikan `ChatResponse`.
+3. `QueryAnalyzerService` menentukan intent, answer level, record type, dan policy marker.
+4. `StructuredEntityResolver` membaca known entities dari cache Qdrant payload jika query mengandung entity natural.
+5. `RetrievalService` memilih Qdrant payload filter atau Qdrant vector search.
+6. `AnswerFormatterService` membuat jawaban deterministic jika data sudah structured.
+7. Jika perlu LLM, `PromptBuilderService` membuat context grounded yang sudah dibersihkan dari noise/disclaimer.
+8. `OllamaService` menjalankan LLM lokal.
+9. Backend mengembalikan `ChatResponse`.
 
 ## 8. Three-Level Retrieval Strategy
 
-### Level 1 - ExactStructured
+### Level 1 - Exact/Structured Retrieval
 
 Dipakai untuk data terstruktur:
 
 - NIK
-- MT-code
-- tanggal
-- divisi
-- status karyawan
-- approval lembur
+- maintenance code
+- date
+- name
+- division
 - shift
-- jabatan
-- lokasi maintenance
-- teknisi maintenance
-- maintenance status
+- employeeStatus
+- position
+- approval
+- location
+- equipment
+- technician
+- maintenanceStatus
 
 Flow:
 
 ```text
-Supabase/PostgreSQL
+QueryAnalyzerService
     |
     v
-ChunkRepository
+StructuredEntityResolver jika perlu
+    |
+    v
+Qdrant payload filter
     |
     v
 AnswerFormatterService
@@ -257,37 +344,37 @@ Response
 
 Karakteristik:
 
-- Tidak memakai Qdrant.
+- Menggunakan Qdrant payload filter.
 - Tidak memakai LLM.
+- Tidak memakai Supabase `document_chunks`.
 - Cepat dan deterministic.
-- Cocok untuk data exact dan filter metadata.
 
 Contoh query:
 
 - `Siapa karyawan dengan NIK RU6-1030?`
-- `Tampilkan seluruh karyawan kontrak`
-- `Tampilkan data karyawan divisi Keuangan`
+- `berikan saya data sinta lestari`
+- `tampilkan karyawan divisi Keuangan`
+- `tampilkan seluruh karyawan kontrak`
+- `siapa aja yang shift C?`
 - `Berikan data maintenance kode MT-308`
-- `Tampilkan lembur approval Pending`
+- `maintenance di gate utama ada gak?`
+- `data valve control`
 
-### Level 2 - DeterministicTemplate
+### Level 2 - Deterministic Template
 
-Dipakai untuk pertanyaan yang sering, pasti, dan jawabannya bisa diambil langsung dari context.
+Dipakai untuk pertanyaan pasti dan sering:
 
-Contoh:
-
-- daftar SOP
-- kecepatan kendaraan
-- backup otomatis server
+- SOP Keamanan Area Kilang
+- backup server
 - kepatuhan APD
-- kapasitas produksi
-- nama unit perusahaan
-- direktur operasi
+- kecepatan kendaraan
+- profil perusahaan
+- audit/profile facts
 
 Flow:
 
 ```text
-Supabase recordType lookup
+Qdrant payload filter by recordType
     |
     v
 AnswerFormatterService template
@@ -298,22 +385,23 @@ Response
 
 Karakteristik:
 
-- Tidak memakai Qdrant jika recordType context cukup.
-- Tidak memakai LLM jika template berhasil.
+- Menggunakan Qdrant payload.
+- Tidak memakai LLM jika template cocok.
+- Tidak memakai Supabase `document_chunks`.
 - Mengurangi latency dan hallucination.
 
 Contoh query:
 
 - `Apa saja SOP Keamanan Area Kilang?`
-- `Berapa kecepatan maksimal kendaraan di area produksi?`
 - `Jam berapa backup otomatis server internal dilakukan?`
 - `Apa tingkat kepatuhan APD?`
-- `Apa nama unit perusahaan?`
+- `Berapa kecepatan maksimal kendaraan di area produksi?`
+- `Apa nama unit perusahaan dalam dokumen ini?`
 - `Berapa kapasitas produksi Pertamina RU VI Balongan?`
 
-### Level 3 - PolicyGrounded / SemanticGrounded
+### Level 3 - Grounded Semantic/Policy Answer
 
-Dipakai untuk pertanyaan fleksibel, policy/izin, reasoning ringan, ringkasan, atau pertanyaan dengan bahasa yang tidak persis sama dengan dokumen.
+Dipakai untuk pertanyaan fleksibel, interpretatif, policy/izin, prosedur, risiko, atau ringkasan.
 
 Contoh:
 
@@ -322,41 +410,24 @@ Contoh:
 - `Apa risiko membawa perangkat elektronik biasa ke area kilang?`
 - `Bagaimana prosedur keamanan sebelum pekerja masuk area kilang?`
 - `Ringkas isi dokumen ini dari sisi keamanan dan operasional.`
+- `Apa informasi yang berkaitan dengan pengendalian risiko operasional perusahaan?`
 
-Flow jika context recordType cukup:
-
-```text
-Supabase recordType lookup
-    |
-    v
-PromptBuilderService policy/general prompt
-    |
-    v
-Ollama LLM
-    |
-    v
-Response
-```
-
-Flow jika perlu semantic search:
+Flow:
 
 ```text
 Ollama embedding
     |
     v
-Qdrant vector search
+Qdrant vector search with payload
     |
     v
-chunkId list
+Semantic context filtering/reranking
     |
     v
-Supabase GetChunksByIds
+Clean context for LLM
     |
     v
-semantic context filtering
-    |
-    v
-PromptBuilderService
+PromptBuilderService grounded prompt
     |
     v
 Ollama LLM
@@ -365,29 +436,45 @@ Ollama LLM
 Response
 ```
 
-Untuk pertanyaan policy, prompt khusus melarang LLM membuat izin/aturan baru dan menegaskan bahwa jika context menyebut kata `hanya`, pihak yang tidak disebut tidak boleh diasumsikan punya izin.
+Karakteristik:
+
+- Menggunakan Qdrant vector search dengan payload.
+- Context dibersihkan sebelum masuk LLM.
+- LLM wajib menjawab hanya berdasarkan context.
+- Prompt melarang LLM membuat izin, aturan, atau informasi baru.
+- Jika context tidak cukup, jawaban harus:
+
+```text
+Maaf, saya tidak menemukan informasi tersebut.
+```
 
 ## 9. Service Responsibilities
 
 | Service / Class | Tanggung jawab |
 |---|---|
-| `RagChatService` | Orchestrator chat: analisis, retrieval, formatting, prompt, LLM, response |
+| `RagChatService` | Orchestrator chat: analisis, retrieval, deterministic answer, prompt, LLM, response |
 | `QueryAnalyzerService` | Mendeteksi intent, answer level, exact key, filter, record type, dan policy question |
-| `RetrievalService` | Memilih retrieval strategy: exact, recordType, semantic Qdrant, context filtering |
-| `AnswerFormatterService` | Membuat deterministic answer untuk structured/profile/audit/SOP template |
-| `PromptBuilderService` | Membuat prompt grounded umum dan policy-grounded |
-| `OllamaService` | Client untuk embedding dan LLM generation lokal |
-| `ChunkRepository` | Akses PostgreSQL untuk `document_chunks`, exact/filter lookup, dan chunk fetch by id |
-| `QdrantService` | Facade agar caller lama tetap stabil |
-| `QdrantSearchClient` | Vector search ke Qdrant |
-| `QdrantPointWriter` | Upsert vector-only point ke Qdrant |
+| `StructuredEntityResolver` | Mencocokkan known entity dari Qdrant payload cache |
+| `RetrievalService` | Memilih retrieval strategy dan mengambil context dari Qdrant payload/vector |
+| `AnswerFormatterService` | Membuat deterministic answer untuk structured/profile/audit/SOP |
+| `PromptBuilderService` | Membuat prompt grounded dan membersihkan context sebelum LLM |
+| `OllamaService` | Client untuk embedding dan LLM lokal |
+| `QdrantService` | Facade untuk operasi Qdrant agar caller stabil |
+| `QdrantSearchClient` | Payload search, vector search, dan known entity retrieval via Qdrant |
+| `QdrantScrollClient` | Scroll/pagination Qdrant untuk payload retrieval |
+| `QdrantFilterBuilder` | Membuat filter payload Qdrant |
+| `QdrantCollectionService` | Init collection dan payload index Qdrant |
+| `QdrantPointWriter` | Upsert vector + payload lengkap ke Qdrant |
+| `RetrievedChunkMapper` | Mapping response Qdrant payload/score ke `RetrievedChunk` |
 | `ChunkMetadataExtractor` | Extract metadata dari chunk content |
-| `RetrievedChunkMapper` | Mapping result Qdrant minimal id/score ke model `RetrievedChunk` |
-| `DocumentIngestionOrchestrator` | Orkestrasi ingestion dokumen |
-| `TextNormalizer` | Normalisasi text PDF/TXT |
-| `ChunkingService` | Split text menjadi chunks |
+| `ObjectStorageService` | Upload file asli ke MinIO |
+| `IngestionService` | Entry point upload PDF/TXT |
+| `DocumentIngestionOrchestrator` | Orkestrasi extraction, chunking, embedding, Qdrant upsert |
 | `PdfTextExtractor` | Extract text dari PDF |
-| `EmbeddingIngestionService` | Generate embedding untuk chunk saat ingestion |
+| `TextNormalizer` | Clean dan normalize text |
+| `ChunkingService` | Split text menjadi chunks |
+| `EmbeddingIngestionService` | Generate embedding untuk chunk |
+| `ChunkRepository` | Legacy/debug repository untuk `document_chunks` jika storage mode aktif |
 
 ## 10. API Endpoints
 
@@ -416,6 +503,13 @@ Response:
 
 Upload file PDF.
 
+Form-data:
+
+```text
+key=file
+type=File
+```
+
 Contoh:
 
 ```bash
@@ -423,18 +517,16 @@ curl -X POST http://localhost:5057/api/upload-pdf \
   -F "file=@Dummy_Data_Internal_Pertamina_RUVI_Balongan.pdf"
 ```
 
-Response:
-
-```json
-{
-  "message": "PDF uploaded successfully",
-  "documentId": "00000000-0000-0000-0000-000000000000"
-}
-```
-
 ### `POST /api/upload-txt`
 
 Upload file TXT.
+
+Form-data:
+
+```text
+key=file
+type=File
+```
 
 Contoh:
 
@@ -445,7 +537,7 @@ curl -X POST http://localhost:5057/api/upload-txt \
 
 ### `POST /api/ingest`
 
-Ingest text langsung melalui JSON.
+Ingest text langsung melalui JSON. Endpoint ini berguna untuk testing/debug.
 
 Request:
 
@@ -474,32 +566,47 @@ Contoh `appsettings.json`:
   "ConnectionStrings": {
     "SupabaseDb": "Host=localhost;Port=54322;Database=postgres;Username=postgres;Password=postgres"
   },
-  "Logging": {
-    "LogLevel": {
-      "Default": "Information",
-      "Microsoft.AspNetCore": "Warning"
-    }
+  "ObjectStorage": {
+    "Endpoint": "localhost:9000",
+    "AccessKey": "minioadmin",
+    "SecretKey": "minioadmin",
+    "BucketName": "rag-documents",
+    "UseSsl": false
   },
-  "AllowedHosts": "*"
+  "StorageMode": {
+    "WriteDocumentChunksToPostgres": false
+  }
 }
 ```
 
-Konfigurasi yang dipakai saat ini:
+Penjelasan:
 
-| Konfigurasi | Nilai saat ini |
+| Config | Fungsi |
 |---|---|
-| PostgreSQL connection string | `ConnectionStrings:SupabaseDb` |
-| Qdrant base URL | `http://localhost:6333` |
-| Qdrant collection | `pertamina_chunks` |
-| Embedding model | `nomic-embed-text` |
-| Chat model | `qwen2.5:1.5b` |
-| Vector size | `768` |
+| `ConnectionStrings:SupabaseDb` | Koneksi PostgreSQL/Supabase untuk `documents` registry dan optional `document_chunks` |
+| `ObjectStorage:Endpoint` | Endpoint MinIO, contoh `localhost:9000` |
+| `ObjectStorage:AccessKey` | Access key MinIO |
+| `ObjectStorage:SecretKey` | Secret key MinIO |
+| `ObjectStorage:BucketName` | Bucket untuk file asli, contoh `rag-documents` |
+| `ObjectStorage:UseSsl` | `false` untuk local HTTP, `true` untuk HTTPS |
+| `StorageMode:WriteDocumentChunksToPostgres` | Mengaktifkan/menonaktifkan penulisan chunk ke PostgreSQL |
 
-Catatan production:
+`WriteDocumentChunksToPostgres=false` berarti:
 
-- Jangan simpan secret asli di repository.
-- Gunakan environment variables atau secret manager.
-- Qdrant URL, Ollama URL, collection name, dan model name sebaiknya dipindahkan ke configuration.
+- `document_chunks` tidak diisi.
+- Retrieval chat tetap berjalan dari Qdrant payload/vector.
+- PostgreSQL tetap dipakai untuk registry `documents`.
+
+`WriteDocumentChunksToPostgres=true` berarti:
+
+- `document_chunks` tetap diisi sebagai backup/debug legacy.
+- Query path chat tetap diarahkan ke Qdrant.
+
+Catatan:
+
+- Jangan commit secret production ke repository.
+- Untuk production, gunakan environment variables atau secret manager.
+- Pastikan Qdrant, MinIO, Ollama, dan PostgreSQL berjalan sebelum upload dokumen.
 
 ## 12. Installation & Running Locally
 
@@ -512,13 +619,11 @@ cd be_service
 
 ### 2. Install .NET SDK
 
-Project ini menggunakan target framework:
+Project saat ini menargetkan:
 
 ```text
 net10.0
 ```
-
-Pastikan SDK yang sesuai sudah terpasang.
 
 ### 3. Jalankan Qdrant
 
@@ -526,7 +631,46 @@ Pastikan SDK yang sesuai sudah terpasang.
 docker run -p 6333:6333 qdrant/qdrant
 ```
 
-### 4. Jalankan Ollama
+### 4. Jalankan MinIO
+
+```bash
+docker run -d -p 9000:9000 -p 9001:9001 \
+  --name minio \
+  -e "MINIO_ROOT_USER=minioadmin" \
+  -e "MINIO_ROOT_PASSWORD=minioadmin" \
+  quay.io/minio/minio server /data --console-address ":9001"
+```
+
+MinIO console:
+
+```text
+http://localhost:9001
+```
+
+Login local:
+
+```text
+username: minioadmin
+password: minioadmin
+```
+
+Bucket:
+
+```text
+rag-documents
+```
+
+Bucket akan dibuat otomatis oleh `ObjectStorageService` jika belum ada.
+
+### 5. Jalankan Ollama
+
+Pastikan Ollama berjalan di:
+
+```text
+http://localhost:11434
+```
+
+Command:
 
 ```bash
 ollama serve
@@ -539,48 +683,64 @@ ollama pull nomic-embed-text
 ollama pull qwen2.5:1.5b
 ```
 
-### 5. Setup Supabase/PostgreSQL
+### 6. Setup PostgreSQL/Supabase
 
-Pastikan PostgreSQL/Supabase berjalan dan extension vector tersedia.
+Pastikan PostgreSQL/Supabase local berjalan dan table `documents` tersedia.
 
-Jalankan schema SQL minimal dari:
+Untuk kolom object storage, jalankan:
 
 ```text
-supabase/snippets/Untitled query 731.sql
+Sql/add_object_storage_columns.sql
 ```
 
-### 6. Configure `appsettings.json`
+Jika ingin tetap memakai `document_chunks` sebagai legacy/debug, pastikan table tersebut juga tersedia.
 
-Sesuaikan connection string:
-
-```json
-"ConnectionStrings": {
-  "SupabaseDb": "Host=...;Port=...;Database=...;Username=...;Password=..."
-}
-```
-
-### 7. Restore, build, run
+### 7. Restore dan build
 
 ```bash
 dotnet restore
 dotnet build
+```
+
+Jika `dotnet` tidak ada di PATH:
+
+```bash
+/usr/local/share/dotnet/dotnet build
+```
+
+### 8. Run backend
+
+```bash
 dotnet run
 ```
 
-### 8. Init Qdrant collection
+Default endpoint local:
+
+```text
+http://localhost:5057
+```
+
+### 9. Init Qdrant collection
 
 ```bash
 curl http://localhost:5057/api/qdrant/init
 ```
 
-### 9. Upload dokumen
+### 10. Upload PDF
 
 ```bash
 curl -X POST http://localhost:5057/api/upload-pdf \
   -F "file=@dokumen.pdf"
 ```
 
-### 10. Test chat
+### 11. Upload TXT
+
+```bash
+curl -X POST http://localhost:5057/api/upload-txt \
+  -F "file=@dokumen.txt"
+```
+
+### 12. Test chat
 
 ```bash
 curl -X POST http://localhost:5057/api/chat \
@@ -590,19 +750,40 @@ curl -X POST http://localhost:5057/api/chat \
 
 ## 13. Database Setup
 
-Schema minimal:
+Schema minimal `documents`:
 
 ```sql
-create extension if not exists vector;
-
 create table if not exists documents (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   source_type text default 'text',
   file_name text,
   department text,
+  storage_bucket text,
+  storage_object_key text,
+  content_type text,
   created_at timestamptz default now()
 );
+```
+
+Migration object storage:
+
+```sql
+alter table documents add column if not exists storage_bucket text;
+alter table documents add column if not exists storage_object_key text;
+alter table documents add column if not exists content_type text;
+```
+
+File migration:
+
+```text
+Sql/add_object_storage_columns.sql
+```
+
+Schema optional/legacy `document_chunks`:
+
+```sql
+create extension if not exists vector;
 
 create table if not exists document_chunks (
   id uuid primary key default gen_random_uuid(),
@@ -615,44 +796,10 @@ create table if not exists document_chunks (
 );
 ```
 
-Index metadata yang direkomendasikan:
+`document_chunks` tidak wajib terisi jika:
 
-```sql
-create index if not exists idx_document_chunks_metadata_record_type
-on document_chunks ((metadata->>'recordType'));
-
-create index if not exists idx_document_chunks_metadata_nik
-on document_chunks ((metadata->>'nik'));
-
-create index if not exists idx_document_chunks_metadata_name_normalized
-on document_chunks ((metadata->>'nameNormalized'));
-
-create index if not exists idx_document_chunks_metadata_maintenance_code
-on document_chunks ((metadata->>'maintenanceCode'));
-
-create index if not exists idx_document_chunks_metadata_date
-on document_chunks ((metadata->>'date'));
-
-create index if not exists idx_document_chunks_metadata_division
-on document_chunks ((metadata->>'division'));
-
-create index if not exists idx_document_chunks_metadata_shift
-on document_chunks ((metadata->>'shift'));
-
-create index if not exists idx_document_chunks_metadata_employee_status
-on document_chunks ((metadata->>'employeeStatus'));
-
-create index if not exists idx_document_chunks_metadata_approval
-on document_chunks ((metadata->>'approval'));
-
-create index if not exists idx_document_chunks_metadata_location
-on document_chunks ((metadata->>'location'));
-
-create index if not exists idx_document_chunks_metadata_maintenance_status
-on document_chunks ((metadata->>'maintenanceStatus'));
-
-create index if not exists idx_document_chunks_metadata_technician
-on document_chunks ((metadata->>'technician'));
+```json
+"WriteDocumentChunksToPostgres": false
 ```
 
 ## 14. Qdrant Setup
@@ -663,68 +810,86 @@ Collection Qdrant dibuat melalui:
 GET /api/qdrant/init
 ```
 
-Konfigurasi saat ini:
+Konfigurasi utama:
 
 - Collection: `pertamina_chunks`
-- Vector size: `768`
 - Distance: `Cosine`
-- Point id: sama dengan `document_chunks.id`
+- Point id: chunk id
+- Payload: content + metadata lengkap
 
-Qdrant upsert saat ini menyimpan vector-only:
+Qdrant point menyimpan:
 
 ```json
 {
-  "id": "chunkId",
-  "vector": [0.01, 0.02, "..."]
+  "id": "chunk-guid",
+  "vector": [0.01, 0.02, 0.03],
+  "payload": {
+    "content": "Isi chunk...",
+    "documentId": "document-guid",
+    "documentTitle": "Dokumen.pdf",
+    "recordType": "sop",
+    "sectionTitle": "SOP Keamanan Area Kilang",
+    "chunkIndex": 1
+  }
 }
 ```
 
-Content dan metadata tidak disimpan sebagai source of truth di Qdrant. Setelah Qdrant mengembalikan point id, backend mengambil chunk lengkap dari Supabase/PostgreSQL.
+Qdrant digunakan untuk:
+
+- Exact/structured lookup via payload filter.
+- Generic recordType lookup via payload filter.
+- SOP/audit/profile retrieval via payload filter.
+- Semantic vector search with payload.
+- Known entity source untuk `StructuredEntityResolver`.
+
+Jika collection Qdrant dihapus, dokumen perlu di-upload/re-ingest ulang agar payload dan vector tersedia lagi.
 
 ## 15. Testing Checklist
 
-### Level 1 - ExactStructured
+### Level 1 - Exact/Structured Retrieval
 
 - [ ] `Siapa karyawan dengan NIK RU6-1030?`
-- [ ] `Tampilkan seluruh karyawan kontrak`
-- [ ] `Tampilkan data karyawan divisi Keuangan`
-- [ ] `Berikan data maintenance kode MT-308`
-- [ ] `Tampilkan lembur approval Pending`
+  - Expected: `source=qdrant_payload`, `usedLlm=false`
 
-Expected:
+- [ ] `berikan saya data sinta lestari`
+  - Expected: `source=qdrant_payload`, `usedLlm=false`
 
-- `retrievalSource=postgres_exact`
-- `qdrantVectorSearch=False`
-- `usedLlm=False`
+- [ ] `tampilkan karyawan divisi Keuangan`
+  - Expected: `source=qdrant_payload`, `usedLlm=false`
 
-### Level 2 - DeterministicTemplate
+- [ ] `maintenance di gate utama ada gak?`
+  - Expected: `source=qdrant_payload`, `usedLlm=false`
+
+- [ ] `berikan saya data karyawan`
+  - Expected: `source=qdrant_payload`, `usedLlm=false`
+
+### Level 2 - Deterministic Template
 
 - [ ] `Apa saja SOP Keamanan Area Kilang?`
-- [ ] `Berapa kecepatan maksimal kendaraan di area produksi?`
+  - Expected: `source=qdrant_payload`, `usedLlm=false`
+
 - [ ] `Jam berapa backup otomatis server internal dilakukan?`
+  - Expected: `source=qdrant_payload`, `usedLlm=false`
+
 - [ ] `Apa tingkat kepatuhan APD?`
-- [ ] `Apa nama unit perusahaan?`
-- [ ] `Berapa kapasitas produksi Pertamina RU VI Balongan?`
+  - Expected: `source=qdrant_payload`, `usedLlm=false`
 
-Expected:
+- [ ] `Berapa kecepatan maksimal kendaraan di area produksi?`
+  - Expected: `source=qdrant_payload`, `usedLlm=false`
 
-- `retrievalSource=postgres_record_type`
-- `qdrantVectorSearch=False`
-- `usedDeterministicAnswer=True`
+### Level 3 - Grounded Semantic/Policy Answer
 
-### Level 3 - PolicyGrounded / SemanticGrounded
+- [ ] `Apa informasi yang berkaitan dengan pengendalian risiko operasional perusahaan?`
+  - Expected: `source=qdrant_vector_payload`, `usedLlm=true`
+
+- [ ] `Apa risiko membawa perangkat elektronik biasa ke area kilang?`
+  - Expected: grounded answer dari SOP/audit, tidak menyebut informasi di luar context
+
+- [ ] `Ringkas isi dokumen ini dari sisi keamanan dan operasional.`
+  - Expected: jawaban ringkas, context SOP/audit/profile, tidak membahas disclaimer dummy
 
 - [ ] `Apakah orang IT boleh masuk area penyimpanan?`
-- [ ] `Kalau pekerja selain HSSE ingin masuk area tangki, apakah diperbolehkan?`
-- [ ] `Apa risiko membawa perangkat elektronik biasa ke area kilang?`
-- [ ] `Bagaimana prosedur keamanan sebelum pekerja masuk area kilang?`
-- [ ] `Ringkas isi dokumen ini dari sisi keamanan dan operasional.`
-
-Expected:
-
-- Menggunakan grounded prompt.
-- Tidak membuat aturan/izin baru.
-- Jika semantic fallback aktif, log menunjukkan `source=qdrant_vector_then_postgres`.
+  - Expected: policy answer grounded, tidak menyimpulkan safety briefing sebagai izin akses
 
 ### Negative / Edge Case
 
@@ -747,88 +912,137 @@ Log penting:
 
 ### `RETRIEVAL_TRACE`
 
+Menjelaskan jalur retrieval.
+
 Contoh:
 
 ```text
-RETRIEVAL_TRACE answerLevel=SemanticGrounded mode=semantic source=qdrant_vector_then_postgres qdrantVectorSearch=True chunks=3
+RETRIEVAL_TRACE answerLevel=SemanticGrounded mode=semantic source=qdrant_vector_payload qdrantVectorSearch=True chunks=3
 ```
 
 Makna:
 
-- `answerLevel`: level decision layer yang dipakai.
-- `mode`: mode retrieval teknis.
+- `answerLevel`: Level 1/2/3 yang dipilih.
+- `mode`: mode teknis retrieval.
 - `source`: sumber retrieval.
-- `qdrantVectorSearch`: apakah Qdrant semantic search dipakai.
-- `chunks`: jumlah chunk final yang masuk context.
+- `qdrantVectorSearch`: apakah vector search Qdrant dipakai.
+- `chunks`: jumlah chunk final.
 
 ### `ANSWER_TRACE`
 
+Menjelaskan cara jawaban dibuat.
+
 Contoh:
 
 ```text
-ANSWER_TRACE answerLevel=PolicyGrounded retrievalMode=sop source=postgres_record_type qdrantVectorSearch=False usedDeterministicAnswer=False usedLlm=True
+ANSWER_TRACE answerLevel=DeterministicTemplate retrievalMode=sop source=qdrant_payload qdrantVectorSearch=False usedDeterministicAnswer=True usedLlm=False
 ```
 
 Makna:
 
-- `usedDeterministicAnswer=True`: jawaban dibuat oleh formatter template.
+- `usedDeterministicAnswer=True`: jawaban dibuat oleh formatter.
 - `usedLlm=True`: jawaban dibuat oleh Ollama LLM.
 
 ### `SEMANTIC_FILTER`
 
+Menjelaskan filtering context semantic.
+
 Contoh:
 
 ```text
-SEMANTIC_FILTER before=5 after=2 allowedTypes=audit,sop
+SEMANTIC_FILTER before=5 after=3 allowedTypes=sop,audit,profile
 ```
 
-Makna:
+### `STRUCTURED_ENTITY_RESOLVER`
 
-- `before`: jumlah chunk hasil fetch dari Supabase setelah Qdrant search.
-- `after`: jumlah chunk final setelah filtering/reranking.
-- `allowedTypes`: recordType yang diprioritaskan.
+Menjelaskan source known entities.
+
+Contoh:
+
+```text
+STRUCTURED_ENTITY_RESOLVER source=qdrant_payload_cache count=120
+STRUCTURED_ENTITY_RESOLVER source=qdrant_payload_refresh count=120
+```
+
+### `STRUCTURED_ENTITY_MATCH`
+
+Menjelaskan hasil entity match tanpa membocorkan content panjang.
+
+Contoh:
+
+```text
+STRUCTURED_ENTITY_MATCH field=name matchType=fuzzy score=0.96
+```
+
+### `INGESTION_STORAGE_MODE`
+
+Menjelaskan apakah `document_chunks` ditulis.
+
+Contoh:
+
+```text
+INGESTION_STORAGE_MODE writeDocumentChunksToPostgres=false
+```
+
+### `OBJECT_STORAGE_UPLOAD`
+
+Menjelaskan upload file asli ke Object Storage.
+
+Contoh:
+
+```text
+OBJECT_STORAGE_UPLOAD bucket=rag-documents objectKey=documents/... contentType=application/pdf
+```
 
 Jika log menunjukkan:
 
 ```text
-source=qdrant_vector_then_postgres
+source=qdrant_vector_payload
 qdrantVectorSearch=True
 ```
 
-artinya semantic search benar-benar memakai Qdrant lalu mengambil content dari Supabase.
+artinya semantic search memakai Qdrant dan langsung menggunakan payload Qdrant sebagai context.
+
+Jika log menunjukkan:
+
+```text
+source=qdrant_payload
+qdrantVectorSearch=False
+```
+
+artinya retrieval memakai filter payload Qdrant tanpa vector search.
 
 ## 17. Current Limitations
 
 Limitasi saat ini:
 
+- MinIO wajib aktif untuk upload PDF/TXT.
+- Qdrant menjadi retrieval store utama; jika collection dihapus, perlu re-ingest.
+- `document_chunks` optional dan tidak selalu berisi data.
 - Parser dan normalizer masih disesuaikan dengan format dokumen tertentu.
-- File asli PDF/TXT belum disimpan ke object storage.
+- LLM lokal masih bisa menghasilkan jawaban kurang natural, sehingga prompt dan evaluation perlu terus diperbaiki.
 - Belum ada authentication/authorization.
 - Belum ada ACL per user, role, atau department.
-- Belum ada document versioning.
-- Belum ada delete/reindex strategy yang lengkap.
 - Belum ada background job ingestion untuk dokumen besar.
-- Belum ada full integration test untuk retrieval end-to-end.
-- LLM lokal bisa lambat tergantung model dan hardware.
-- Jawaban semantic tetap bergantung pada kualitas embedding, ranking, context filtering, dan model LLM.
-- Konfigurasi Qdrant/Ollama/model name masih hardcoded di beberapa service dan sebaiknya dipindahkan ke configuration.
+- Belum ada automated RAG evaluation suite.
+- Belum ada document versioning dan delete/reindex pipeline yang lengkap.
+- Observability masih berbasis logging, belum ada dashboard metrics.
 
 ## 18. Production Roadmap
 
 Roadmap menuju production-ready:
 
-- Tambahkan object storage untuk file asli, misalnya MinIO atau Supabase Storage.
 - Tambahkan authentication untuk API backend.
 - Tambahkan authorization dan ACL per user/department/document.
 - Tambahkan document versioning.
-- Tambahkan delete/reindex pipeline.
+- Tambahkan delete/reindex pipeline untuk Object Storage, Qdrant, dan registry dokumen.
 - Tambahkan background job queue untuk ingestion dokumen besar.
-- Tambahkan retry, timeout, dan circuit breaker untuk Postgres, Qdrant, dan Ollama.
-- Tambahkan monitoring latency, error rate, dan retrieval trace.
-- Tambahkan integration tests untuk ingestion dan retrieval.
+- Tambahkan retry, timeout, dan circuit breaker untuk Qdrant, MinIO, Ollama, dan PostgreSQL.
+- Tambahkan monitoring latency, error rate, retrieval source, dan LLM usage.
+- Tambahkan automated regression test dan RAG evaluation suite.
 - Tambahkan rate limiting untuk endpoint chat/upload.
-- Pindahkan secrets dan service URL ke environment variables.
-- Tambahkan Docker Compose untuk backend, Qdrant, Postgres/Supabase, dan MinIO jika digunakan.
+- Pindahkan secrets dan service URL ke environment variables atau secret manager.
+- Tambahkan Docker Compose untuk backend, Qdrant, MinIO, PostgreSQL/Supabase, dan Ollama jika diperlukan.
 - Tambahkan streaming response jika frontend membutuhkan pengalaman chat yang lebih responsif.
 - Tambahkan frontend auth dan session management.
 
@@ -837,16 +1051,23 @@ Roadmap menuju production-ready:
 Status project:
 
 ```text
-Prototype stable / production-like prototype
+Production-like prototype
 ```
 
-Project ini belum production final, tetapi arsitekturnya sudah mengarah ke production-like RAG:
+Project saat ini sudah menggunakan Qdrant-centric chat retrieval:
 
-- PostgreSQL/Supabase sebagai source of truth.
-- Qdrant sebagai vector-only index.
-- Exact/filter retrieval dipisahkan dari semantic retrieval.
-- Deterministic template digunakan untuk pertanyaan pasti.
-- Grounded LLM digunakan hanya saat dibutuhkan.
-- Logging trace sudah membantu membuktikan jalur retrieval dan answer generation.
+- Source document asli disimpan di Object Storage/MinIO.
+- Chunk retrieval utama berada di Qdrant payload/vector.
+- PostgreSQL/Supabase dipakai untuk registry/admin metadata.
+- `document_chunks` bersifat optional/legacy/debug.
+- Structured entity detection membaca known entities dari Qdrant payload cache.
+- Level 1 dan Level 2 tidak memakai LLM jika data/template cukup.
+- Level 3 memakai Qdrant vector search with payload dan grounded prompt.
 
-Sebelum dipakai sebagai sistem production penuh, project masih perlu security, ACL, object storage, reindex strategy, monitoring, test suite, dan deployment hardening.
+Project belum production final, tetapi arsitekturnya sudah mendekati target production-like RAG yang lebih sederhana di query path:
+
+```text
+User query -> Qdrant -> AnswerFormatter/PromptBuilder -> Ollama jika perlu -> ChatResponse
+```
+
+Sebelum dipakai sebagai sistem production penuh, project masih perlu security, ACL, reindex strategy, background ingestion, observability, automated evaluation, dan deployment hardening.
