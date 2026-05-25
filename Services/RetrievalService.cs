@@ -251,7 +251,7 @@ public class RetrievalService
         {
             chunks = await SearchGenericRecordTypeAsync(analysis.GenericRecordType);
             retrievalMode = $"{analysis.GenericRecordType}_general";
-            retrievalSource = "postgres_record_type";
+            retrievalSource = "qdrant_payload";
             contextLimit = GetGenericContextLimit(analysis.GenericRecordType);
         }
 
@@ -406,11 +406,9 @@ public class RetrievalService
     private async Task<List<RetrievedChunk>> SearchGenericRecordTypeAsync(string recordType)
     {
         var limit = GetGenericContextLimit(recordType);
+        var chunks = await _qdrantService.SearchByRecordTypeAsync(recordType, limit);
 
-        return await _chunkRepository.SearchByRecordTypeAsync(
-            recordType,
-            "",
-            limit);
+        return NormalizeQdrantGenericRecordTypeChunks(recordType, chunks);
     }
 
     private async Task<List<RetrievedChunk>> SearchQdrantRecordTypeAsync(
@@ -506,6 +504,34 @@ public class RetrievalService
             _logger.LogWarning(
                 "Qdrant structured payload missing. Re-ingest required. lookup={LookupName}, hits={HitCount}, withPayload={PayloadCount}",
                 lookupName,
+                chunks.Count,
+                chunksWithPayload.Count);
+        }
+
+        return chunksWithPayload
+            .GroupBy(GetQdrantRecordDedupKey)
+            .Select(x => x.First())
+            .ToList();
+    }
+
+    private List<RetrievedChunk> NormalizeQdrantGenericRecordTypeChunks(
+        string recordType,
+        List<RetrievedChunk> chunks)
+    {
+        if (!chunks.Any())
+        {
+            return chunks;
+        }
+
+        var chunksWithPayload = chunks
+            .Where(HasQdrantPayload)
+            .ToList();
+
+        if (chunksWithPayload.Count != chunks.Count)
+        {
+            _logger.LogWarning(
+                "Qdrant generic recordType payload missing. Re-ingest required. recordType={RecordType}, hits={HitCount}, withPayload={PayloadCount}",
+                recordType,
                 chunks.Count,
                 chunksWithPayload.Count);
         }
