@@ -118,90 +118,112 @@ public class RetrievalService
         {
             if (analysis.IsEmployeeQuery && !string.IsNullOrWhiteSpace(analysis.Division))
             {
-                chunks = await _chunkRepository.SearchEmployeesByDivisionAsync(analysis.Division);
+                chunks = NormalizeQdrantStructuredChunks(
+                    "employee_by_division",
+                    await _qdrantService.SearchEmployeesByDivisionAsync(analysis.Division));
                 retrievalMode = "employee_by_division";
-                retrievalSource = "postgres_exact";
+                retrievalSource = "qdrant_payload";
                 contextLimit = 50;
             }
             else if (analysis.IsEmployeeQuery && !string.IsNullOrWhiteSpace(analysis.Shift))
             {
-                chunks = await _chunkRepository.SearchEmployeesByShiftAsync(analysis.Shift);
+                chunks = NormalizeQdrantStructuredChunks(
+                    "employee_by_shift",
+                    await _qdrantService.SearchEmployeesByShiftAsync(analysis.Shift));
                 retrievalMode = "employee_by_shift";
-                retrievalSource = "postgres_exact";
+                retrievalSource = "qdrant_payload";
                 contextLimit = 50;
             }
             else if (analysis.IsEmployeeQuery && !string.IsNullOrWhiteSpace(analysis.EmployeeStatus))
             {
-                chunks = await _chunkRepository.SearchEmployeesByStatusAsync(analysis.EmployeeStatus);
+                chunks = NormalizeQdrantStructuredChunks(
+                    "employee_by_status",
+                    await _qdrantService.SearchEmployeesByStatusAsync(analysis.EmployeeStatus));
                 retrievalMode = "employee_by_status";
-                retrievalSource = "postgres_exact";
+                retrievalSource = "qdrant_payload";
                 contextLimit = 50;
             }
             else if (analysis.IsEmployeeQuery && !string.IsNullOrWhiteSpace(analysis.Position))
             {
-                chunks = await _chunkRepository.SearchEmployeesByPositionAsync(analysis.Position);
+                chunks = NormalizeQdrantStructuredChunks(
+                    "employee_by_position",
+                    await _qdrantService.SearchEmployeesByPositionAsync(analysis.Position));
                 retrievalMode = "employee_by_position";
-                retrievalSource = "postgres_exact";
+                retrievalSource = "qdrant_payload";
                 contextLimit = 50;
             }
             else if ((analysis.IsOvertimeQuery || analysis.Question.Contains("approval", StringComparison.OrdinalIgnoreCase)) &&
                      !string.IsNullOrWhiteSpace(analysis.Approval))
             {
-                chunks = await _chunkRepository.SearchOvertimeByApprovalAsync(analysis.Approval);
+                chunks = NormalizeQdrantStructuredChunks(
+                    "overtime_by_approval",
+                    await _qdrantService.SearchOvertimeByApprovalAsync(analysis.Approval));
                 retrievalMode = "overtime_by_approval";
-                retrievalSource = "postgres_exact";
+                retrievalSource = "qdrant_payload";
                 contextLimit = 50;
             }
             else if (analysis.IsOvertimeQuery && !string.IsNullOrWhiteSpace(analysis.Division))
             {
-                chunks = await _chunkRepository.SearchOvertimeByDivisionAsync(analysis.Division);
+                chunks = NormalizeQdrantStructuredChunks(
+                    "overtime_by_division",
+                    await _qdrantService.SearchOvertimeByDivisionAsync(analysis.Division));
                 retrievalMode = "overtime_by_division";
-                retrievalSource = "postgres_exact";
+                retrievalSource = "qdrant_payload";
                 contextLimit = 50;
             }
             else if (analysis.IsMaintenanceQuery && !string.IsNullOrWhiteSpace(analysis.MaintenanceStatus))
             {
-                chunks = await _chunkRepository.SearchMaintenanceByStatusAsync(analysis.MaintenanceStatus);
+                chunks = NormalizeQdrantStructuredChunks(
+                    "maintenance_by_status",
+                    await _qdrantService.SearchMaintenanceByStatusAsync(analysis.MaintenanceStatus));
                 retrievalMode = "maintenance_by_status";
-                retrievalSource = "postgres_exact";
+                retrievalSource = "qdrant_payload";
                 contextLimit = 50;
             }
             else if (analysis.IsMaintenanceQuery && !string.IsNullOrWhiteSpace(analysis.Location))
             {
-                chunks = await _chunkRepository.SearchMaintenanceByLocationAsync(analysis.Location);
+                chunks = NormalizeQdrantStructuredChunks(
+                    "maintenance_by_location",
+                    await _qdrantService.SearchMaintenanceByLocationAsync(analysis.Location));
                 retrievalMode = "maintenance_by_location";
-                retrievalSource = "postgres_exact";
+                retrievalSource = "qdrant_payload";
                 contextLimit = 50;
             }
             else if (analysis.IsMaintenanceQuery &&
                      analysis.Question.Contains("teknisi", StringComparison.OrdinalIgnoreCase) &&
                      !string.IsNullOrWhiteSpace(analysis.Technician))
             {
-                chunks = await _chunkRepository.SearchMaintenanceByTechnicianAsync(analysis.Technician);
+                chunks = NormalizeQdrantStructuredChunks(
+                    "maintenance_by_technician",
+                    await _qdrantService.SearchMaintenanceByTechnicianAsync(analysis.Technician));
                 retrievalMode = "maintenance_by_technician";
-                retrievalSource = "postgres_exact";
+                retrievalSource = "qdrant_payload";
                 contextLimit = 50;
             }
             else if (analysis.LooksLikePersonName)
             {
                 if (analysis.IsOvertimeQuery)
                 {
-                    chunks = await _chunkRepository.SearchOvertimeByNameAsync(
-                        analysis.PersonKeyword,
-                        10);
+                    chunks = NormalizeQdrantStructuredChunks(
+                        "exact-name-overtime",
+                        await _qdrantService.SearchOvertimeByNameAsync(
+                            analysis.PersonKeyword,
+                            10));
 
                     retrievalMode = "exact-name-overtime";
-                    retrievalSource = "postgres_exact";
+                    retrievalSource = "qdrant_payload";
                 }
 
                 if (!chunks.Any())
                 {
-                    chunks = await _chunkRepository.SearchByNameAsync(
-                        analysis.PersonKeyword,
-                        10);
+                    chunks = NormalizeQdrantStructuredChunks(
+                        "exact-name",
+                        await _qdrantService.SearchByNameAsync(
+                            analysis.PersonKeyword,
+                            10));
 
                     retrievalMode = "exact-name";
-                    retrievalSource = "postgres_exact";
+                    retrievalSource = "qdrant_payload";
                 }
 
                 contextLimit = 10;
@@ -218,7 +240,7 @@ public class RetrievalService
             {
                 chunks = resolved.Chunks;
                 retrievalMode = resolved.RetrievalMode;
-                retrievalSource = "postgres_exact";
+                retrievalSource = "qdrant_payload";
                 contextLimit = resolved.ContextLimit;
             }
         }
@@ -294,40 +316,64 @@ public class RetrievalService
         var chunks = entity.FieldName switch
         {
             "name" when analysis.IsOvertimeQuery =>
-                await _chunkRepository.SearchOvertimeByNameAsync(entity.Value, 10),
+                NormalizeQdrantStructuredChunks(
+                    "exact-name-overtime",
+                    await _qdrantService.SearchOvertimeByNameAsync(entity.Value, 10)),
 
             "name" =>
-                await _chunkRepository.SearchByNameAsync(entity.Value, 10),
+                NormalizeQdrantStructuredChunks(
+                    "exact-name",
+                    await _qdrantService.SearchByNameAsync(entity.Value, 10)),
 
             "division" when analysis.IsOvertimeQuery =>
-                await _chunkRepository.SearchOvertimeByDivisionAsync(entity.Value),
+                NormalizeQdrantStructuredChunks(
+                    "overtime_by_division",
+                    await _qdrantService.SearchOvertimeByDivisionAsync(entity.Value)),
 
             "division" =>
-                await _chunkRepository.SearchEmployeesByDivisionAsync(entity.Value),
+                NormalizeQdrantStructuredChunks(
+                    "employee_by_division",
+                    await _qdrantService.SearchEmployeesByDivisionAsync(entity.Value)),
 
             "shift" =>
-                await _chunkRepository.SearchEmployeesByShiftAsync(entity.Value),
+                NormalizeQdrantStructuredChunks(
+                    "employee_by_shift",
+                    await _qdrantService.SearchEmployeesByShiftAsync(entity.Value)),
 
             "employeeStatus" =>
-                await _chunkRepository.SearchEmployeesByStatusAsync(entity.Value),
+                NormalizeQdrantStructuredChunks(
+                    "employee_by_status",
+                    await _qdrantService.SearchEmployeesByStatusAsync(entity.Value)),
 
             "position" =>
-                await _chunkRepository.SearchEmployeesByPositionAsync(entity.Value),
+                NormalizeQdrantStructuredChunks(
+                    "employee_by_position",
+                    await _qdrantService.SearchEmployeesByPositionAsync(entity.Value)),
 
             "approval" =>
-                await _chunkRepository.SearchOvertimeByApprovalAsync(entity.Value),
+                NormalizeQdrantStructuredChunks(
+                    "overtime_by_approval",
+                    await _qdrantService.SearchOvertimeByApprovalAsync(entity.Value)),
 
             "maintenanceStatus" =>
-                await _chunkRepository.SearchMaintenanceByStatusAsync(entity.Value),
+                NormalizeQdrantStructuredChunks(
+                    "maintenance_by_status",
+                    await _qdrantService.SearchMaintenanceByStatusAsync(entity.Value)),
 
             "location" =>
-                await _chunkRepository.SearchMaintenanceByLocationAsync(entity.Value),
+                NormalizeQdrantStructuredChunks(
+                    "maintenance_by_location",
+                    await _qdrantService.SearchMaintenanceByLocationAsync(entity.Value)),
 
             "technician" =>
-                await _chunkRepository.SearchMaintenanceByTechnicianAsync(entity.Value),
+                NormalizeQdrantStructuredChunks(
+                    "maintenance_by_technician",
+                    await _qdrantService.SearchMaintenanceByTechnicianAsync(entity.Value)),
 
             "equipment" =>
-                await _chunkRepository.SearchMaintenanceByEquipmentAsync(entity.Value),
+                NormalizeQdrantStructuredChunks(
+                    "maintenance_by_equipment",
+                    await _qdrantService.SearchMaintenanceByEquipmentAsync(entity.Value)),
 
             _ => new List<RetrievedChunk>()
         };
@@ -431,6 +477,34 @@ public class RetrievalService
         {
             _logger.LogWarning(
                 "Qdrant exact payload missing. Re-ingest required. lookup={LookupName}, hits={HitCount}, withPayload={PayloadCount}",
+                lookupName,
+                chunks.Count,
+                chunksWithPayload.Count);
+        }
+
+        return chunksWithPayload
+            .GroupBy(GetQdrantRecordDedupKey)
+            .Select(x => x.First())
+            .ToList();
+    }
+
+    private List<RetrievedChunk> NormalizeQdrantStructuredChunks(
+        string lookupName,
+        List<RetrievedChunk> chunks)
+    {
+        if (!chunks.Any())
+        {
+            return chunks;
+        }
+
+        var chunksWithPayload = chunks
+            .Where(HasQdrantPayload)
+            .ToList();
+
+        if (chunksWithPayload.Count != chunks.Count)
+        {
+            _logger.LogWarning(
+                "Qdrant structured payload missing. Re-ingest required. lookup={LookupName}, hits={HitCount}, withPayload={PayloadCount}",
                 lookupName,
                 chunks.Count,
                 chunksWithPayload.Count);

@@ -143,6 +143,11 @@ public class QdrantService
         return await _searchClient.SearchMaintenanceByTechnicianAsync(technician, limit);
     }
 
+    public async Task<List<RetrievedChunk>> SearchMaintenanceByEquipmentAsync(string equipment, int limit = 50)
+    {
+        return await _searchClient.SearchMaintenanceByEquipmentAsync(equipment, limit);
+    }
+
     public async Task<List<RetrievedChunk>> SearchByRecordTypeAsync(
         string recordType,
         string keyword,

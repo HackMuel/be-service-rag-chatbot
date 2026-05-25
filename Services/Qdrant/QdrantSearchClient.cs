@@ -190,6 +190,15 @@ public class QdrantSearchClient
         }, limit);
     }
 
+    public async Task<List<RetrievedChunk>> SearchMaintenanceByEquipmentAsync(string equipment, int limit = 50)
+    {
+        return await SearchByPayloadFilterAsync(new Dictionary<string, string>
+        {
+            ["recordType"] = "maintenance",
+            ["equipment"] = equipment
+        }, limit);
+    }
+
     public async Task<List<RetrievedChunk>> SearchByRecordTypeAsync(
         string recordType,
         string keyword,
