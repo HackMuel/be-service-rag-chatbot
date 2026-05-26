@@ -25,9 +25,12 @@ public class QdrantCollectionService
             }
         };
 
-        var response = await _httpClient.PutAsync(
-            $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}",
-            new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
+        var response = await HttpResponseGuard.SendAsync(
+            () => _httpClient.PutAsync(
+                $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}",
+                new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")),
+            _logger,
+            "Qdrant collection setup"
         );
 
         if (response.StatusCode != System.Net.HttpStatusCode.Conflict)
@@ -71,9 +74,12 @@ public class QdrantCollectionService
 
             try
             {
-                var response = await _httpClient.PutAsync(
-                    $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/index",
-                    new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
+                var response = await HttpResponseGuard.SendAsync(
+                    () => _httpClient.PutAsync(
+                        $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/index",
+                        new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")),
+                    _logger,
+                    "Qdrant payload index"
                 );
 
                 if (!response.IsSuccessStatusCode &&

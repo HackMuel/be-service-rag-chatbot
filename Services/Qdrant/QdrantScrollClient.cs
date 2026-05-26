@@ -52,9 +52,12 @@ public class QdrantScrollClient
                 body["offset"] = offset;
             }
 
-            var response = await _httpClient.PostAsync(
-                $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/points/scroll",
-                new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
+            var response = await HttpResponseGuard.SendAsync(
+                () => _httpClient.PostAsync(
+                    $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/points/scroll",
+                    new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")),
+                _logger,
+                "Qdrant keyword scroll"
             );
 
             await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Qdrant keyword scroll");
@@ -108,9 +111,12 @@ public class QdrantScrollClient
                 body["offset"] = offset;
             }
 
-            var response = await _httpClient.PostAsync(
-                $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/points/scroll",
-                new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
+            var response = await HttpResponseGuard.SendAsync(
+                () => _httpClient.PostAsync(
+                    $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/points/scroll",
+                    new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")),
+                _logger,
+                "Qdrant structured entity scroll"
             );
 
             await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Qdrant structured entity scroll");
@@ -189,9 +195,12 @@ public class QdrantScrollClient
                 body["offset"] = offset;
             }
 
-            var response = await _httpClient.PostAsync(
-                $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/points/scroll",
-                new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
+            var response = await HttpResponseGuard.SendAsync(
+                () => _httpClient.PostAsync(
+                    $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/points/scroll",
+                    new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")),
+                _logger,
+                "Qdrant filtered scroll"
             );
 
             await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Qdrant filtered scroll");

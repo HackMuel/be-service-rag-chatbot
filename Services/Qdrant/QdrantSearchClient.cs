@@ -42,9 +42,12 @@ public class QdrantSearchClient
             with_vector = false
         };
 
-        var response = await _httpClient.PostAsync(
-            $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/points/search",
-            new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
+        var response = await HttpResponseGuard.SendAsync(
+            () => _httpClient.PostAsync(
+                $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/points/search",
+                new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")),
+            _logger,
+            "Qdrant vector search"
         );
 
         await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Qdrant vector search");

@@ -71,9 +71,12 @@ public class QdrantPointWriter
             }
         };
 
-        var response = await _httpClient.PutAsync(
-            $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/points",
-            new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
+        var response = await HttpResponseGuard.SendAsync(
+            () => _httpClient.PutAsync(
+                $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/points",
+                new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")),
+            _logger,
+            "Qdrant point upsert"
         );
 
         await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Qdrant point upsert");

@@ -32,8 +32,19 @@ public class ObjectStorageService
     {
         EnsureConfigured();
 
-        return await _minioClient.BucketExistsAsync(
-            new BucketExistsArgs().WithBucket(_options.BucketName));
+        try
+        {
+            return await _minioClient.BucketExistsAsync(
+                new BucketExistsArgs().WithBucket(_options.BucketName));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "SERVICE_UNAVAILABLE service=ObjectStorage");
+
+            throw ExternalServiceUnavailableException.ObjectStorage(ex);
+        }
     }
 
     public async Task EnsureBucketExistsAsync()
@@ -44,8 +55,19 @@ public class ObjectStorageService
 
         if (!exists)
         {
-            await _minioClient.MakeBucketAsync(
-                new MakeBucketArgs().WithBucket(_options.BucketName));
+            try
+            {
+                await _minioClient.MakeBucketAsync(
+                    new MakeBucketArgs().WithBucket(_options.BucketName));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "SERVICE_UNAVAILABLE service=ObjectStorage");
+
+                throw ExternalServiceUnavailableException.ObjectStorage(ex);
+            }
         }
     }
 
@@ -55,20 +77,36 @@ public class ObjectStorageService
         string contentType)
     {
         EnsureConfigured();
-        await EnsureBucketExistsAsync();
 
         await using var uploadStream = await CreateSeekableUploadStreamAsync(fileStream);
 
-        var putObjectArgs = new PutObjectArgs()
-            .WithBucket(_options.BucketName)
-            .WithObject(objectKey)
-            .WithStreamData(uploadStream)
-            .WithObjectSize(uploadStream.Length)
-            .WithContentType(string.IsNullOrWhiteSpace(contentType)
-                ? "application/octet-stream"
-                : contentType);
+        try
+        {
+            await EnsureBucketExistsAsync();
 
-        await _minioClient.PutObjectAsync(putObjectArgs);
+            var putObjectArgs = new PutObjectArgs()
+                .WithBucket(_options.BucketName)
+                .WithObject(objectKey)
+                .WithStreamData(uploadStream)
+                .WithObjectSize(uploadStream.Length)
+                .WithContentType(string.IsNullOrWhiteSpace(contentType)
+                    ? "application/octet-stream"
+                    : contentType);
+
+            await _minioClient.PutObjectAsync(putObjectArgs);
+        }
+        catch (ExternalServiceUnavailableException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "SERVICE_UNAVAILABLE service=ObjectStorage");
+
+            throw ExternalServiceUnavailableException.ObjectStorage(ex);
+        }
 
         _logger.LogInformation(
             "OBJECT_STORAGE_UPLOAD bucket={BucketName} objectKey={ObjectKey} contentType={ContentType}",
@@ -91,12 +129,24 @@ public class ObjectStorageService
 
         var memoryStream = new MemoryStream();
 
-        var getObjectArgs = new GetObjectArgs()
-            .WithBucket(_options.BucketName)
-            .WithObject(objectKey)
-            .WithCallbackStream(stream => stream.CopyTo(memoryStream));
+        try
+        {
+            var getObjectArgs = new GetObjectArgs()
+                .WithBucket(_options.BucketName)
+                .WithObject(objectKey)
+                .WithCallbackStream(stream => stream.CopyTo(memoryStream));
 
-        await _minioClient.GetObjectAsync(getObjectArgs);
+            await _minioClient.GetObjectAsync(getObjectArgs);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "SERVICE_UNAVAILABLE service=ObjectStorage");
+
+            throw ExternalServiceUnavailableException.ObjectStorage(ex);
+        }
+
         memoryStream.Position = 0;
 
         return memoryStream;

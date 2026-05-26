@@ -24,12 +24,15 @@ public class OllamaService
             input = text
         };
 
-        var response = await _httpClient.PostAsync(
-            "http://localhost:11434/api/embed",
-            new StringContent(
-                JsonConvert.SerializeObject(request),
-                Encoding.UTF8,
-                "application/json")
+        var response = await HttpResponseGuard.SendAsync(
+            () => _httpClient.PostAsync(
+                "http://localhost:11434/api/embed",
+                new StringContent(
+                    JsonConvert.SerializeObject(request),
+                    Encoding.UTF8,
+                    "application/json")),
+            _logger,
+            "Ollama embedding"
         );
 
         await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Ollama embedding");
@@ -54,12 +57,15 @@ public class OllamaService
             stream = false
         };
 
-        var response = await _httpClient.PostAsync(
-            "http://localhost:11434/api/generate",
-            new StringContent(
-                JsonConvert.SerializeObject(request),
-                Encoding.UTF8,
-                "application/json")
+        var response = await HttpResponseGuard.SendAsync(
+            () => _httpClient.PostAsync(
+                "http://localhost:11434/api/generate",
+                new StringContent(
+                    JsonConvert.SerializeObject(request),
+                    Encoding.UTF8,
+                    "application/json")),
+            _logger,
+            "Ollama generation"
         );
 
         await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Ollama generation");

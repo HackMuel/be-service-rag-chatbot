@@ -45,6 +45,7 @@ builder.Services.AddCors(options =>
 });
 var app = builder.Build();
 app.UseCors("AllowFrontend");
+app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -90,19 +91,7 @@ app.MapPost("/api/upload-txt", async (
         return Results.BadRequest("File kosong");
     }
 
-    Guid documentId;
-
-    try
-    {
-        documentId = await ingestionService.IngestTxtAsync(file);
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(
-            title: "TXT upload failed",
-            detail: ex.Message,
-            statusCode: StatusCodes.Status500InternalServerError);
-    }
+    var documentId = await ingestionService.IngestTxtAsync(file);
 
     return Results.Ok(new
     {
@@ -126,19 +115,7 @@ app.MapPost("/api/upload-pdf", async (
         return Results.BadRequest("File harus PDF");
     }
 
-    Guid documentId;
-
-    try
-    {
-        documentId = await ingestionService.IngestPdfAsync(file);
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(
-            title: "PDF upload failed",
-            detail: ex.Message,
-            statusCode: StatusCodes.Status500InternalServerError);
-    }
+    var documentId = await ingestionService.IngestPdfAsync(file);
 
     return Results.Ok(new
     {
@@ -162,7 +139,11 @@ app.MapGet("/api/qdrant/status", async (HealthCheckService healthCheckService) =
 {
     var response = await healthCheckService.CheckQdrantStatusAsync();
 
-    return Results.Ok(response);
+    return response.Status == "ok"
+        ? Results.Ok(response)
+        : Results.Json(
+            response,
+            statusCode: StatusCodes.Status503ServiceUnavailable);
 });
 
 app.UseHttpsRedirection();
