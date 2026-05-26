@@ -11,6 +11,7 @@ builder.Services.AddSingleton<QdrantFilterBuilder>();
 builder.Services.AddSingleton<QdrantScrollClient>();
 builder.Services.AddSingleton<QdrantService>();
 builder.Services.AddHttpClient<OllamaService>();
+builder.Services.AddHttpClient<HealthCheckService>();
 builder.Services.AddControllers();
 builder.Services.AddScoped<IngestionService>();
 builder.Services.AddSingleton<QueryAnalyzerService>();
@@ -32,7 +33,6 @@ builder.Services.AddScoped<ChunkRepository>();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddScoped<RagChatService>();
-builder.Services.AddScoped<SupabaseRagService>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
@@ -50,6 +50,14 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+
+app.MapGet("/health", async (HealthCheckService healthCheckService) =>
+{
+    var response = await healthCheckService.CheckHealthAsync();
+
+    return Results.Ok(response);
+});
+
 app.MapPost("/api/chat", async (
     ChatRequest request,
     RagChatService ragChatService) =>
@@ -148,6 +156,13 @@ app.MapGet("/api/qdrant/init", async (QdrantService qdrantService) =>
     {
         message = "Qdrant collection ready"
     });
+});
+
+app.MapGet("/api/qdrant/status", async (HealthCheckService healthCheckService) =>
+{
+    var response = await healthCheckService.CheckQdrantStatusAsync();
+
+    return Results.Ok(response);
 });
 
 app.UseHttpsRedirection();

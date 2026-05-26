@@ -28,12 +28,19 @@ public class ObjectStorageService
 
     public string BucketName => _options.BucketName;
 
+    public async Task<bool> BucketExistsAsync()
+    {
+        EnsureConfigured();
+
+        return await _minioClient.BucketExistsAsync(
+            new BucketExistsArgs().WithBucket(_options.BucketName));
+    }
+
     public async Task EnsureBucketExistsAsync()
     {
         EnsureConfigured();
 
-        var exists = await _minioClient.BucketExistsAsync(
-            new BucketExistsArgs().WithBucket(_options.BucketName));
+        var exists = await BucketExistsAsync();
 
         if (!exists)
         {
