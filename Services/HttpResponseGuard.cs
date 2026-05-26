@@ -5,7 +5,8 @@ public static class HttpResponseGuard
     public static async Task<HttpResponseMessage> SendAsync(
         Func<Task<HttpResponseMessage>> send,
         ILogger logger,
-        string serviceName)
+        string serviceName,
+        string serviceBaseUrl = "")
     {
         try
         {
@@ -18,14 +19,18 @@ public static class HttpResponseGuard
                 "SERVICE_UNAVAILABLE service={ServiceName}",
                 ResolveServiceName(serviceName));
 
-            throw ExternalServiceUnavailableException.FromServiceName(serviceName, ex);
+            throw ExternalServiceUnavailableException.FromServiceName(
+                serviceName,
+                ex,
+                serviceBaseUrl);
         }
     }
 
     public static async Task EnsureSuccessAsync(
         HttpResponseMessage response,
         ILogger logger,
-        string serviceName)
+        string serviceName,
+        string serviceBaseUrl = "")
     {
         if (response.IsSuccessStatusCode)
         {
@@ -40,7 +45,9 @@ public static class HttpResponseGuard
             response.StatusCode,
             body.Length);
 
-        throw ExternalServiceUnavailableException.FromServiceName(serviceName);
+        throw ExternalServiceUnavailableException.FromServiceName(
+            serviceName,
+            serviceBaseUrl: serviceBaseUrl);
     }
 
     private static string ResolveServiceName(string serviceName)

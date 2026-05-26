@@ -18,6 +18,12 @@ builder.Services.AddSingleton<QueryAnalyzerService>();
 builder.Services.AddSingleton<AnswerFormatterService>();
 builder.Services.AddSingleton<PromptBuilderService>();
 builder.Services.AddSingleton<StructuredEntityResolver>();
+builder.Services.Configure<QdrantOptions>(
+    builder.Configuration.GetSection("Qdrant"));
+builder.Services.Configure<OllamaOptions>(
+    builder.Configuration.GetSection("Ollama"));
+builder.Services.Configure<RetrievalOptions>(
+    builder.Configuration.GetSection("Retrieval"));
 builder.Services.Configure<ObjectStorageOptions>(
     builder.Configuration.GetSection("ObjectStorage"));
 builder.Services.Configure<StorageModeOptions>(

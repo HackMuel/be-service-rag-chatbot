@@ -1,16 +1,22 @@
 using System.Text;
 using System.Text.Json;
+using be_service.Models;
+using Microsoft.Extensions.Options;
 
 namespace be_service.Services;
 
 public class QdrantCollectionService
 {
     private readonly HttpClient _httpClient;
+    private readonly QdrantOptions _options;
     private readonly ILogger<QdrantCollectionService> _logger;
 
-    public QdrantCollectionService(ILogger<QdrantCollectionService> logger)
+    public QdrantCollectionService(
+        IOptions<QdrantOptions> options,
+        ILogger<QdrantCollectionService> logger)
     {
         _httpClient = new HttpClient();
+        _options = options.Value;
         _logger = logger;
     }
 
@@ -20,22 +26,31 @@ public class QdrantCollectionService
         {
             vectors = new
             {
-                size = 768,
-                distance = "Cosine"
+                size = _options.VectorSize > 0
+                    ? _options.VectorSize
+                    : QdrantOptions.DefaultVectorSize,
+                distance = string.IsNullOrWhiteSpace(_options.Distance)
+                    ? QdrantOptions.DefaultDistance
+                    : _options.Distance
             }
         };
 
         var response = await HttpResponseGuard.SendAsync(
             () => _httpClient.PutAsync(
-                $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}",
+                $"{BaseUrl}/collections/{CollectionName}",
                 new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")),
             _logger,
-            "Qdrant collection setup"
+            "Qdrant collection setup",
+            BaseUrl
         );
 
         if (response.StatusCode != System.Net.HttpStatusCode.Conflict)
         {
-            await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Qdrant collection setup");
+            await HttpResponseGuard.EnsureSuccessAsync(
+                response,
+                _logger,
+                "Qdrant collection setup",
+                BaseUrl);
         }
 
         await EnsurePayloadIndexesAsync();
@@ -76,10 +91,11 @@ public class QdrantCollectionService
             {
                 var response = await HttpResponseGuard.SendAsync(
                     () => _httpClient.PutAsync(
-                        $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/index",
+                        $"{BaseUrl}/collections/{CollectionName}/index",
                         new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")),
                     _logger,
-                    "Qdrant payload index"
+                    "Qdrant payload index",
+                    BaseUrl
                 );
 
                 if (!response.IsSuccessStatusCode &&
@@ -100,4 +116,12 @@ public class QdrantCollectionService
             }
         }
     }
+
+    private string BaseUrl => string.IsNullOrWhiteSpace(_options.BaseUrl)
+        ? QdrantOptions.DefaultBaseUrl
+        : _options.BaseUrl.TrimEnd('/');
+
+    private string CollectionName => string.IsNullOrWhiteSpace(_options.CollectionName)
+        ? QdrantOptions.DefaultCollectionName
+        : _options.CollectionName.Trim();
 }

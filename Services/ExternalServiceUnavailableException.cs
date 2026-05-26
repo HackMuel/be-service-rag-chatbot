@@ -20,16 +20,17 @@ public class ExternalServiceUnavailableException : Exception
 
     public static ExternalServiceUnavailableException FromServiceName(
         string serviceName,
-        Exception? innerException = null)
+        Exception? innerException = null,
+        string serviceBaseUrl = "")
     {
         if (serviceName.Contains("Qdrant", StringComparison.OrdinalIgnoreCase))
         {
-            return Qdrant(innerException);
+            return Qdrant(innerException, serviceBaseUrl);
         }
 
         if (serviceName.Contains("Ollama", StringComparison.OrdinalIgnoreCase))
         {
-            return Ollama(innerException);
+            return Ollama(innerException, serviceBaseUrl);
         }
 
         if (serviceName.Contains("Object", StringComparison.OrdinalIgnoreCase) ||
@@ -45,21 +46,25 @@ public class ExternalServiceUnavailableException : Exception
             innerException);
     }
 
-    public static ExternalServiceUnavailableException Qdrant(Exception? innerException = null)
+    public static ExternalServiceUnavailableException Qdrant(
+        Exception? innerException = null,
+        string serviceBaseUrl = "")
     {
         return new ExternalServiceUnavailableException(
             "Qdrant",
             "Qdrant unavailable",
-            "Layanan Qdrant tidak dapat dihubungi. Pastikan Qdrant berjalan di localhost:6333.",
+            BuildUnavailableMessage("Qdrant", serviceBaseUrl),
             innerException);
     }
 
-    public static ExternalServiceUnavailableException Ollama(Exception? innerException = null)
+    public static ExternalServiceUnavailableException Ollama(
+        Exception? innerException = null,
+        string serviceBaseUrl = "")
     {
         return new ExternalServiceUnavailableException(
             "Ollama",
             "Ollama unavailable",
-            "Layanan Ollama tidak dapat dihubungi. Pastikan Ollama berjalan di localhost:11434.",
+            BuildUnavailableMessage("Ollama", serviceBaseUrl),
             innerException);
     }
 
@@ -70,5 +75,14 @@ public class ExternalServiceUnavailableException : Exception
             "Object storage unavailable",
             "Object storage tidak dapat dihubungi. Pastikan MinIO berjalan dan bucket tersedia.",
             innerException);
+    }
+
+    private static string BuildUnavailableMessage(
+        string serviceName,
+        string serviceBaseUrl)
+    {
+        return string.IsNullOrWhiteSpace(serviceBaseUrl)
+            ? $"Layanan {serviceName} tidak dapat dihubungi."
+            : $"Layanan {serviceName} tidak dapat dihubungi. Pastikan {serviceName} berjalan di {serviceBaseUrl}.";
     }
 }

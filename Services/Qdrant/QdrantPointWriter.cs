@@ -2,17 +2,22 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using be_service.Models;
+using Microsoft.Extensions.Options;
 
 namespace be_service.Services;
 
 public class QdrantPointWriter
 {
     private readonly HttpClient _httpClient;
+    private readonly QdrantOptions _options;
     private readonly ILogger<QdrantPointWriter> _logger;
 
-    public QdrantPointWriter(ILogger<QdrantPointWriter> logger)
+    public QdrantPointWriter(
+        IOptions<QdrantOptions> options,
+        ILogger<QdrantPointWriter> logger)
     {
         _httpClient = new HttpClient();
+        _options = options.Value;
         _logger = logger;
     }
 
@@ -73,13 +78,18 @@ public class QdrantPointWriter
 
         var response = await HttpResponseGuard.SendAsync(
             () => _httpClient.PutAsync(
-                $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/points",
+                $"{BaseUrl}/collections/{CollectionName}/points",
                 new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")),
             _logger,
-            "Qdrant point upsert"
+            "Qdrant point upsert",
+            BaseUrl
         );
 
-        await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Qdrant point upsert");
+        await HttpResponseGuard.EnsureSuccessAsync(
+            response,
+            _logger,
+            "Qdrant point upsert",
+            BaseUrl);
     }
 
     private static object BuildPayload(RetrievedChunk chunk)
@@ -120,4 +130,12 @@ public class QdrantPointWriter
 
         return Regex.Replace(value.Trim(), @"\s+", " ").ToUpperInvariant();
     }
+
+    private string BaseUrl => string.IsNullOrWhiteSpace(_options.BaseUrl)
+        ? QdrantOptions.DefaultBaseUrl
+        : _options.BaseUrl.TrimEnd('/');
+
+    private string CollectionName => string.IsNullOrWhiteSpace(_options.CollectionName)
+        ? QdrantOptions.DefaultCollectionName
+        : _options.CollectionName.Trim();
 }

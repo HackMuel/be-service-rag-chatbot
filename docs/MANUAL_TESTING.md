@@ -151,6 +151,24 @@ Pastikan `appsettings.json` memiliki konfigurasi berikut:
 
 ```json
 {
+  "Qdrant": {
+    "BaseUrl": "http://localhost:6333",
+    "CollectionName": "pertamina_chunks",
+    "VectorSize": 768,
+    "Distance": "Cosine"
+  },
+  "Ollama": {
+    "BaseUrl": "http://localhost:11434",
+    "EmbeddingModel": "nomic-embed-text",
+    "ChatModel": "qwen2.5:1.5b",
+    "TimeoutSeconds": 120
+  },
+  "Retrieval": {
+    "SemanticTopK": 5,
+    "SemanticScoreThreshold": 0.55,
+    "SemanticMaxContextChunks": 3,
+    "StructuredDefaultLimit": 50
+  },
   "ObjectStorage": {
     "Endpoint": "localhost:9000",
     "AccessKey": "minioadmin",
@@ -166,8 +184,22 @@ Pastikan `appsettings.json` memiliki konfigurasi berikut:
 
 Expected behavior:
 
+- `Qdrant.CollectionName=pertamina_chunks`: semua retrieval Qdrant membaca collection yang sama.
+- `Ollama.EmbeddingModel=nomic-embed-text`: embedding upload dan semantic query memakai model yang sama.
+- `Retrieval.SemanticScoreThreshold=0.55`: semantic context dengan score rendah difilter.
 - `WriteDocumentChunksToPostgres=false`: `document_chunks` tidak diisi. Chat tetap berjalan dari Qdrant payload/vector.
 - `WriteDocumentChunksToPostgres=true`: `document_chunks` diisi sebagai backup/debug legacy.
+
+Config bisa dioverride via environment variable standar .NET:
+
+```text
+Qdrant__BaseUrl
+Qdrant__CollectionName
+Ollama__BaseUrl
+Ollama__EmbeddingModel
+Ollama__ChatModel
+StorageMode__WriteDocumentChunksToPostgres
+```
 
 ## 6. Health Check
 

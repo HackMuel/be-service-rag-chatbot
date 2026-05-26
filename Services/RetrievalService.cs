@@ -1,5 +1,6 @@
 using be_service.Models;
 using be_service.Repositories;
+using Microsoft.Extensions.Options;
 
 namespace be_service.Services;
 
@@ -9,22 +10,22 @@ public class RetrievalService
     private readonly OllamaService _ollamaService;
     private readonly ChunkRepository _chunkRepository;
     private readonly StructuredEntityResolver _structuredEntityResolver;
+    private readonly RetrievalOptions _retrievalOptions;
     private readonly ILogger<RetrievalService> _logger;
-
-    private const float MinimumSemanticSimilarity = 0.55f;
-    private const int SemanticContextLimit = 3;
 
     public RetrievalService(
         QdrantService qdrantService,
         OllamaService ollamaService,
         ChunkRepository chunkRepository,
         StructuredEntityResolver structuredEntityResolver,
+        IOptions<RetrievalOptions> retrievalOptions,
         ILogger<RetrievalService> logger)
     {
         _qdrantService = qdrantService;
         _ollamaService = ollamaService;
         _chunkRepository = chunkRepository;
         _structuredEntityResolver = structuredEntityResolver;
+        _retrievalOptions = retrievalOptions.Value;
         _logger = logger;
     }
 
@@ -123,7 +124,7 @@ public class RetrievalService
                     await _qdrantService.SearchEmployeesByDivisionAsync(analysis.Division));
                 retrievalMode = "employee_by_division";
                 retrievalSource = "qdrant_payload";
-                contextLimit = 50;
+                contextLimit = StructuredDefaultLimit;
             }
             else if (analysis.IsEmployeeQuery && !string.IsNullOrWhiteSpace(analysis.Shift))
             {
@@ -132,7 +133,7 @@ public class RetrievalService
                     await _qdrantService.SearchEmployeesByShiftAsync(analysis.Shift));
                 retrievalMode = "employee_by_shift";
                 retrievalSource = "qdrant_payload";
-                contextLimit = 50;
+                contextLimit = StructuredDefaultLimit;
             }
             else if (analysis.IsEmployeeQuery && !string.IsNullOrWhiteSpace(analysis.EmployeeStatus))
             {
@@ -141,7 +142,7 @@ public class RetrievalService
                     await _qdrantService.SearchEmployeesByStatusAsync(analysis.EmployeeStatus));
                 retrievalMode = "employee_by_status";
                 retrievalSource = "qdrant_payload";
-                contextLimit = 50;
+                contextLimit = StructuredDefaultLimit;
             }
             else if (analysis.IsEmployeeQuery && !string.IsNullOrWhiteSpace(analysis.Position))
             {
@@ -150,7 +151,7 @@ public class RetrievalService
                     await _qdrantService.SearchEmployeesByPositionAsync(analysis.Position));
                 retrievalMode = "employee_by_position";
                 retrievalSource = "qdrant_payload";
-                contextLimit = 50;
+                contextLimit = StructuredDefaultLimit;
             }
             else if ((analysis.IsOvertimeQuery || analysis.Question.Contains("approval", StringComparison.OrdinalIgnoreCase)) &&
                      !string.IsNullOrWhiteSpace(analysis.Approval))
@@ -160,7 +161,7 @@ public class RetrievalService
                     await _qdrantService.SearchOvertimeByApprovalAsync(analysis.Approval));
                 retrievalMode = "overtime_by_approval";
                 retrievalSource = "qdrant_payload";
-                contextLimit = 50;
+                contextLimit = StructuredDefaultLimit;
             }
             else if (analysis.IsOvertimeQuery && !string.IsNullOrWhiteSpace(analysis.Division))
             {
@@ -169,7 +170,7 @@ public class RetrievalService
                     await _qdrantService.SearchOvertimeByDivisionAsync(analysis.Division));
                 retrievalMode = "overtime_by_division";
                 retrievalSource = "qdrant_payload";
-                contextLimit = 50;
+                contextLimit = StructuredDefaultLimit;
             }
             else if (analysis.IsMaintenanceQuery && !string.IsNullOrWhiteSpace(analysis.MaintenanceStatus))
             {
@@ -178,7 +179,7 @@ public class RetrievalService
                     await _qdrantService.SearchMaintenanceByStatusAsync(analysis.MaintenanceStatus));
                 retrievalMode = "maintenance_by_status";
                 retrievalSource = "qdrant_payload";
-                contextLimit = 50;
+                contextLimit = StructuredDefaultLimit;
             }
             else if (analysis.IsMaintenanceQuery && !string.IsNullOrWhiteSpace(analysis.Location))
             {
@@ -187,7 +188,7 @@ public class RetrievalService
                     await _qdrantService.SearchMaintenanceByLocationAsync(analysis.Location));
                 retrievalMode = "maintenance_by_location";
                 retrievalSource = "qdrant_payload";
-                contextLimit = 50;
+                contextLimit = StructuredDefaultLimit;
             }
             else if (analysis.IsMaintenanceQuery &&
                      analysis.Question.Contains("teknisi", StringComparison.OrdinalIgnoreCase) &&
@@ -198,7 +199,7 @@ public class RetrievalService
                     await _qdrantService.SearchMaintenanceByTechnicianAsync(analysis.Technician));
                 retrievalMode = "maintenance_by_technician";
                 retrievalSource = "qdrant_payload";
-                contextLimit = 50;
+                contextLimit = StructuredDefaultLimit;
             }
             else if (analysis.LooksLikePersonName)
             {
@@ -259,11 +260,11 @@ public class RetrievalService
         {
             var embedding = await _ollamaService.GenerateEmbeddingAsync(analysis.Question);
 
-            var vectorHits = await _qdrantService.SearchSemanticAsync(embedding, 5);
+            var vectorHits = await _qdrantService.SearchSemanticAsync(embedding, SemanticTopK);
             qdrantVectorSearch = true;
 
             vectorHits = vectorHits
-                .Where(x => x.Similarity >= MinimumSemanticSimilarity)
+                .Where(x => x.Similarity >= SemanticScoreThreshold)
                 .ToList();
 
             chunks = GetSemanticChunksFromQdrantPayload(vectorHits);
@@ -271,7 +272,7 @@ public class RetrievalService
 
             retrievalMode = "semantic";
             retrievalSource = "qdrant_vector_payload";
-            contextLimit = SemanticContextLimit;
+            contextLimit = SemanticMaxContextChunks;
         }
 
         var relevantChunks = chunks
@@ -579,15 +580,15 @@ public class RetrievalService
         };
     }
 
-    private static int GetStructuredEntityContextLimit(string fieldName)
+    private int GetStructuredEntityContextLimit(string fieldName)
     {
-        return fieldName == "name" ? 10 : 50;
+        return fieldName == "name" ? 10 : StructuredDefaultLimit;
     }
 
-    private static int GetGenericContextLimit(string recordType)
+    private int GetGenericContextLimit(string recordType)
     {
         return recordType is "employee" or "overtime" or "maintenance"
-            ? 50
+            ? StructuredDefaultLimit
             : 5;
     }
 
@@ -646,10 +647,10 @@ public class RetrievalService
         }
 
         var result = filteredChunks
-            .Where(x => x.Similarity >= MinimumSemanticSimilarity)
+            .Where(x => x.Similarity >= SemanticScoreThreshold)
             .OrderByDescending(x => x.Similarity)
             .ThenBy(x => x.ChunkIndex ?? int.MaxValue)
-            .Take(SemanticContextLimit)
+            .Take(SemanticMaxContextChunks)
             .ToList();
 
         LogSemanticFilter(chunks.Count, result.Count, allowedTypes);
@@ -737,4 +738,20 @@ public class RetrievalService
         return keywords.Any(keyword =>
             value.Contains(keyword, StringComparison.OrdinalIgnoreCase));
     }
+
+    private int SemanticTopK => _retrievalOptions.SemanticTopK > 0
+        ? _retrievalOptions.SemanticTopK
+        : RetrievalOptions.DefaultSemanticTopK;
+
+    private float SemanticScoreThreshold => _retrievalOptions.SemanticScoreThreshold > 0
+        ? _retrievalOptions.SemanticScoreThreshold
+        : RetrievalOptions.DefaultSemanticScoreThreshold;
+
+    private int SemanticMaxContextChunks => _retrievalOptions.SemanticMaxContextChunks > 0
+        ? _retrievalOptions.SemanticMaxContextChunks
+        : RetrievalOptions.DefaultSemanticMaxContextChunks;
+
+    private int StructuredDefaultLimit => _retrievalOptions.StructuredDefaultLimit > 0
+        ? _retrievalOptions.StructuredDefaultLimit
+        : RetrievalOptions.DefaultStructuredDefaultLimit;
 }

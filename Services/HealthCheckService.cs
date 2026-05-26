@@ -1,5 +1,7 @@
 using System.Net;
 using System.Text.Json;
+using be_service.Models;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace be_service.Services;
@@ -9,17 +11,23 @@ public class HealthCheckService
     private readonly HttpClient _httpClient;
     private readonly IConfiguration _configuration;
     private readonly ObjectStorageService _objectStorageService;
+    private readonly QdrantOptions _qdrantOptions;
+    private readonly OllamaOptions _ollamaOptions;
     private readonly ILogger<HealthCheckService> _logger;
 
     public HealthCheckService(
         HttpClient httpClient,
         IConfiguration configuration,
         ObjectStorageService objectStorageService,
+        IOptions<QdrantOptions> qdrantOptions,
+        IOptions<OllamaOptions> ollamaOptions,
         ILogger<HealthCheckService> logger)
     {
         _httpClient = httpClient;
         _configuration = configuration;
         _objectStorageService = objectStorageService;
+        _qdrantOptions = qdrantOptions.Value;
+        _ollamaOptions = ollamaOptions.Value;
         _logger = logger;
     }
 
@@ -55,15 +63,15 @@ public class HealthCheckService
         try
         {
             var response = await _httpClient.GetAsync(
-                $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}");
+                $"{QdrantBaseUrl}/collections/{QdrantCollectionName}");
 
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
                 return new QdrantStatusResponse
                 {
                     Status = "error",
-                    CollectionName = QdrantConstants.CollectionName,
-                    Message = $"Collection '{QdrantConstants.CollectionName}' tidak ditemukan. Jalankan /api/qdrant/init."
+                    CollectionName = QdrantCollectionName,
+                    Message = $"Collection '{QdrantCollectionName}' tidak ditemukan. Jalankan /api/qdrant/init."
                 };
             }
 
@@ -72,7 +80,7 @@ public class HealthCheckService
                 return new QdrantStatusResponse
                 {
                     Status = "error",
-                    CollectionName = QdrantConstants.CollectionName,
+                    CollectionName = QdrantCollectionName,
                     Message = $"Qdrant merespons dengan status {(int)response.StatusCode} ({response.StatusCode})."
                 };
             }
@@ -84,7 +92,7 @@ public class HealthCheckService
             return new QdrantStatusResponse
             {
                 Status = "ok",
-                CollectionName = QdrantConstants.CollectionName,
+                CollectionName = QdrantCollectionName,
                 Message = "Qdrant dapat dihubungi dan collection tersedia.",
                 PointsCount = TryGetLong(result, "points_count"),
                 VectorsCount = TryGetLong(result, "vectors_count")
@@ -99,8 +107,8 @@ public class HealthCheckService
             return new QdrantStatusResponse
             {
                 Status = "error",
-                CollectionName = QdrantConstants.CollectionName,
-                Message = "Qdrant tidak dapat dihubungi. Pastikan Qdrant berjalan di localhost:6333."
+                CollectionName = QdrantCollectionName,
+                Message = $"Qdrant tidak dapat dihubungi. Pastikan Qdrant berjalan di {QdrantBaseUrl}."
             };
         }
     }
@@ -118,7 +126,7 @@ public class HealthCheckService
     {
         try
         {
-            var response = await _httpClient.GetAsync("http://localhost:11434/api/tags");
+            var response = await _httpClient.GetAsync($"{OllamaBaseUrl}/api/tags");
 
             return response.IsSuccessStatusCode
                 ? DependencyCheck.Ok("reachable")
@@ -208,6 +216,18 @@ public class HealthCheckService
         public static DependencyCheck Ok(string message) => new("ok", message);
         public static DependencyCheck Error(string message) => new("error", message);
     }
+
+    private string QdrantBaseUrl => string.IsNullOrWhiteSpace(_qdrantOptions.BaseUrl)
+        ? QdrantOptions.DefaultBaseUrl
+        : _qdrantOptions.BaseUrl.TrimEnd('/');
+
+    private string QdrantCollectionName => string.IsNullOrWhiteSpace(_qdrantOptions.CollectionName)
+        ? QdrantOptions.DefaultCollectionName
+        : _qdrantOptions.CollectionName.Trim();
+
+    private string OllamaBaseUrl => string.IsNullOrWhiteSpace(_ollamaOptions.BaseUrl)
+        ? OllamaOptions.DefaultBaseUrl
+        : _ollamaOptions.BaseUrl.TrimEnd('/');
 }
 
 public class HealthResponse

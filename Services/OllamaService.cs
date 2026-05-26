@@ -1,4 +1,6 @@
 using System.Text;
+using be_service.Models;
+using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 
 namespace be_service.Services;
@@ -6,36 +8,51 @@ namespace be_service.Services;
 public class OllamaService
 {
     private readonly HttpClient _httpClient;
+    private readonly OllamaOptions _options;
     private readonly ILogger<OllamaService> _logger;
 
     public OllamaService(
         HttpClient httpClient,
+        IOptions<OllamaOptions> options,
         ILogger<OllamaService> logger)
     {
         _httpClient = httpClient;
+        _options = options.Value;
         _logger = logger;
+
+        _httpClient.BaseAddress = new Uri($"{BaseUrl}/");
+
+        if (_options.TimeoutSeconds > 0)
+        {
+            _httpClient.Timeout = TimeSpan.FromSeconds(_options.TimeoutSeconds);
+        }
     }
 
     public async Task<List<float>> GenerateEmbeddingAsync(string text)
     {
         var request = new
         {
-            model = "nomic-embed-text",
+            model = EmbeddingModel,
             input = text
         };
 
         var response = await HttpResponseGuard.SendAsync(
             () => _httpClient.PostAsync(
-                "http://localhost:11434/api/embed",
+                "api/embed",
                 new StringContent(
                     JsonConvert.SerializeObject(request),
                     Encoding.UTF8,
                     "application/json")),
             _logger,
-            "Ollama embedding"
+            "Ollama embedding",
+            BaseUrl
         );
 
-        await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Ollama embedding");
+        await HttpResponseGuard.EnsureSuccessAsync(
+            response,
+            _logger,
+            "Ollama embedding",
+            BaseUrl);
 
         var json = await response.Content.ReadAsStringAsync();
 
@@ -52,23 +69,28 @@ public class OllamaService
     {
         var request = new
         {
-            model = "qwen2.5:1.5b",
+            model = ChatModel,
             prompt = prompt,
             stream = false
         };
 
         var response = await HttpResponseGuard.SendAsync(
             () => _httpClient.PostAsync(
-                "http://localhost:11434/api/generate",
+                "api/generate",
                 new StringContent(
                     JsonConvert.SerializeObject(request),
                     Encoding.UTF8,
                     "application/json")),
             _logger,
-            "Ollama generation"
+            "Ollama generation",
+            BaseUrl
         );
 
-        await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Ollama generation");
+        await HttpResponseGuard.EnsureSuccessAsync(
+            response,
+            _logger,
+            "Ollama generation",
+            BaseUrl);
 
         var json = await response.Content.ReadAsStringAsync();
 
@@ -76,4 +98,16 @@ public class OllamaService
 
         return result.response.ToString();
     }
+
+    private string BaseUrl => string.IsNullOrWhiteSpace(_options.BaseUrl)
+        ? OllamaOptions.DefaultBaseUrl
+        : _options.BaseUrl.TrimEnd('/');
+
+    private string EmbeddingModel => string.IsNullOrWhiteSpace(_options.EmbeddingModel)
+        ? OllamaOptions.DefaultEmbeddingModel
+        : _options.EmbeddingModel;
+
+    private string ChatModel => string.IsNullOrWhiteSpace(_options.ChatModel)
+        ? OllamaOptions.DefaultChatModel
+        : _options.ChatModel;
 }

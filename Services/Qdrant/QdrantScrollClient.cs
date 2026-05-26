@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using be_service.Models;
+using Microsoft.Extensions.Options;
 
 namespace be_service.Services;
 
@@ -22,11 +23,15 @@ public class QdrantScrollClient
     };
 
     private readonly HttpClient _httpClient;
+    private readonly QdrantOptions _options;
     private readonly ILogger<QdrantScrollClient> _logger;
 
-    public QdrantScrollClient(ILogger<QdrantScrollClient> logger)
+    public QdrantScrollClient(
+        IOptions<QdrantOptions> options,
+        ILogger<QdrantScrollClient> logger)
     {
         _httpClient = new HttpClient();
+        _options = options.Value;
         _logger = logger;
     }
 
@@ -54,13 +59,18 @@ public class QdrantScrollClient
 
             var response = await HttpResponseGuard.SendAsync(
                 () => _httpClient.PostAsync(
-                    $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/points/scroll",
+                    $"{BaseUrl}/collections/{CollectionName}/points/scroll",
                     new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")),
                 _logger,
-                "Qdrant keyword scroll"
+                "Qdrant keyword scroll",
+                BaseUrl
             );
 
-            await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Qdrant keyword scroll");
+            await HttpResponseGuard.EnsureSuccessAsync(
+                response,
+                _logger,
+                "Qdrant keyword scroll",
+                BaseUrl);
 
             var resultJson = await response.Content.ReadAsStringAsync();
 
@@ -113,13 +123,18 @@ public class QdrantScrollClient
 
             var response = await HttpResponseGuard.SendAsync(
                 () => _httpClient.PostAsync(
-                    $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/points/scroll",
+                    $"{BaseUrl}/collections/{CollectionName}/points/scroll",
                     new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")),
                 _logger,
-                "Qdrant structured entity scroll"
+                "Qdrant structured entity scroll",
+                BaseUrl
             );
 
-            await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Qdrant structured entity scroll");
+            await HttpResponseGuard.EnsureSuccessAsync(
+                response,
+                _logger,
+                "Qdrant structured entity scroll",
+                BaseUrl);
 
             var resultJson = await response.Content.ReadAsStringAsync();
 
@@ -197,13 +212,18 @@ public class QdrantScrollClient
 
             var response = await HttpResponseGuard.SendAsync(
                 () => _httpClient.PostAsync(
-                    $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/points/scroll",
+                    $"{BaseUrl}/collections/{CollectionName}/points/scroll",
                     new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")),
                 _logger,
-                "Qdrant filtered scroll"
+                "Qdrant filtered scroll",
+                BaseUrl
             );
 
-            await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Qdrant filtered scroll");
+            await HttpResponseGuard.EnsureSuccessAsync(
+                response,
+                _logger,
+                "Qdrant filtered scroll",
+                BaseUrl);
 
             var resultJson = await response.Content.ReadAsStringAsync();
 
@@ -290,4 +310,12 @@ public class QdrantScrollClient
             ? offset.GetString()
             : offset.GetRawText();
     }
+
+    private string BaseUrl => string.IsNullOrWhiteSpace(_options.BaseUrl)
+        ? QdrantOptions.DefaultBaseUrl
+        : _options.BaseUrl.TrimEnd('/');
+
+    private string CollectionName => string.IsNullOrWhiteSpace(_options.CollectionName)
+        ? QdrantOptions.DefaultCollectionName
+        : _options.CollectionName.Trim();
 }

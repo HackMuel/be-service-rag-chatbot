@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using be_service.Models;
+using Microsoft.Extensions.Options;
 
 namespace be_service.Services;
 
@@ -10,16 +11,19 @@ public class QdrantSearchClient
     private readonly HttpClient _httpClient;
     private readonly QdrantScrollClient _scrollClient;
     private readonly QdrantFilterBuilder _filterBuilder;
+    private readonly QdrantOptions _options;
     private readonly ILogger<QdrantSearchClient> _logger;
 
     public QdrantSearchClient(
         QdrantScrollClient scrollClient,
         QdrantFilterBuilder filterBuilder,
+        IOptions<QdrantOptions> options,
         ILogger<QdrantSearchClient> logger)
     {
         _httpClient = new HttpClient();
         _scrollClient = scrollClient;
         _filterBuilder = filterBuilder;
+        _options = options.Value;
         _logger = logger;
     }
 
@@ -44,13 +48,18 @@ public class QdrantSearchClient
 
         var response = await HttpResponseGuard.SendAsync(
             () => _httpClient.PostAsync(
-                $"{QdrantConstants.BaseUrl}/collections/{QdrantConstants.CollectionName}/points/search",
+                $"{BaseUrl}/collections/{CollectionName}/points/search",
                 new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")),
             _logger,
-            "Qdrant vector search"
+            "Qdrant vector search",
+            BaseUrl
         );
 
-        await HttpResponseGuard.EnsureSuccessAsync(response, _logger, "Qdrant vector search");
+        await HttpResponseGuard.EnsureSuccessAsync(
+            response,
+            _logger,
+            "Qdrant vector search",
+            BaseUrl);
 
         var resultJson = await response.Content.ReadAsStringAsync();
 
@@ -249,4 +258,12 @@ public class QdrantSearchClient
     {
         return recordType.Trim().ToLowerInvariant();
     }
+
+    private string BaseUrl => string.IsNullOrWhiteSpace(_options.BaseUrl)
+        ? QdrantOptions.DefaultBaseUrl
+        : _options.BaseUrl.TrimEnd('/');
+
+    private string CollectionName => string.IsNullOrWhiteSpace(_options.CollectionName)
+        ? QdrantOptions.DefaultCollectionName
+        : _options.CollectionName.Trim();
 }

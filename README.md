@@ -566,6 +566,24 @@ Contoh `appsettings.json`:
   "ConnectionStrings": {
     "SupabaseDb": "Host=localhost;Port=54322;Database=postgres;Username=postgres;Password=postgres"
   },
+  "Qdrant": {
+    "BaseUrl": "http://localhost:6333",
+    "CollectionName": "pertamina_chunks",
+    "VectorSize": 768,
+    "Distance": "Cosine"
+  },
+  "Ollama": {
+    "BaseUrl": "http://localhost:11434",
+    "EmbeddingModel": "nomic-embed-text",
+    "ChatModel": "qwen2.5:1.5b",
+    "TimeoutSeconds": 120
+  },
+  "Retrieval": {
+    "SemanticTopK": 5,
+    "SemanticScoreThreshold": 0.55,
+    "SemanticMaxContextChunks": 3,
+    "StructuredDefaultLimit": 50
+  },
   "ObjectStorage": {
     "Endpoint": "localhost:9000",
     "AccessKey": "minioadmin",
@@ -584,6 +602,18 @@ Penjelasan:
 | Config | Fungsi |
 |---|---|
 | `ConnectionStrings:SupabaseDb` | Koneksi PostgreSQL/Supabase untuk `documents` registry dan optional `document_chunks` |
+| `Qdrant:BaseUrl` | Endpoint Qdrant |
+| `Qdrant:CollectionName` | Nama collection Qdrant utama |
+| `Qdrant:VectorSize` | Dimensi vector embedding |
+| `Qdrant:Distance` | Distance metric collection, contoh `Cosine` |
+| `Ollama:BaseUrl` | Endpoint Ollama |
+| `Ollama:EmbeddingModel` | Model embedding lokal |
+| `Ollama:ChatModel` | Model generation/chat lokal |
+| `Ollama:TimeoutSeconds` | Timeout request Ollama |
+| `Retrieval:SemanticTopK` | Jumlah kandidat awal semantic vector search |
+| `Retrieval:SemanticScoreThreshold` | Minimum similarity semantic |
+| `Retrieval:SemanticMaxContextChunks` | Maksimum chunk semantic yang dikirim ke LLM |
+| `Retrieval:StructuredDefaultLimit` | Limit default untuk retrieval structured/filter |
 | `ObjectStorage:Endpoint` | Endpoint MinIO, contoh `localhost:9000` |
 | `ObjectStorage:AccessKey` | Access key MinIO |
 | `ObjectStorage:SecretKey` | Secret key MinIO |
@@ -606,6 +636,7 @@ Catatan:
 
 - Jangan commit secret production ke repository.
 - Untuk production, gunakan environment variables atau secret manager.
+- Semua konfigurasi di atas bisa dioverride dengan environment variable standar .NET, misalnya `Qdrant__BaseUrl`, `Qdrant__CollectionName`, `Ollama__BaseUrl`, `Ollama__EmbeddingModel`, `Ollama__ChatModel`, dan `StorageMode__WriteDocumentChunksToPostgres`.
 - Pastikan Qdrant, MinIO, Ollama, dan PostgreSQL berjalan sebelum upload dokumen.
 
 ## 12. Installation & Running Locally
