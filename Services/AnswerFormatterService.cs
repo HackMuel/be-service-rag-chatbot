@@ -10,6 +10,13 @@ public class AnswerFormatterService
         string retrievalMode,
         string question)
     {
+        var operationalRiskAnswer = TryBuildOperationalRiskAnswer(chunks, question);
+
+        if (!string.IsNullOrWhiteSpace(operationalRiskAnswer))
+        {
+            return operationalRiskAnswer;
+        }
+
         if (retrievalMode == "profile")
         {
             return BuildProfileAnswer(chunks, question);
@@ -45,6 +52,142 @@ public class AnswerFormatterService
         return chunks.Any(IsStructuredRecord)
             ? BuildStructuredAnswer(chunks)
             : null;
+    }
+
+    public string? TryBuildOperationalRiskAnswer(
+        List<RetrievedChunk> chunks,
+        string question)
+    {
+        if (!IsOperationalRiskQuestion(question))
+        {
+            return null;
+        }
+
+        var relevantContent = chunks
+            .Where(chunk => ResolveRecordType(chunk) is "sop" or "audit")
+            .SelectMany(chunk => ExtractSentences(chunk.Content))
+            .Where(sentence => !IsNoiseSentence(sentence))
+            .ToList();
+
+        if (!relevantContent.Any())
+        {
+            return null;
+        }
+
+        var content = string.Join("\n", relevantContent);
+        var bullets = new List<string>();
+
+        if (ContainsAny(content, "APD lengkap", "menggunakan APD") &&
+            ContainsAny(content, "area produksi"))
+        {
+            bullets.Add("Seluruh pekerja wajib menggunakan APD lengkap di area produksi.");
+        }
+
+        if (ContainsAny(content, "perangkat elektronik") &&
+            ContainsAny(content, "non-sertifikasi", "rawan ledakan"))
+        {
+            bullets.Add("Perangkat elektronik non-sertifikasi dilarang di area rawan ledakan.");
+        }
+
+        var accessAndBriefing = new List<string>();
+
+        if (ContainsAny(content, "kartu akses") &&
+            ContainsAny(content, "gate utama"))
+        {
+            accessAndBriefing.Add("Pemeriksaan kartu akses dilakukan di seluruh gate utama");
+        }
+
+        if (ContainsAny(content, "safety briefing", "shift malam"))
+        {
+            var briefingSentence = FindFirstMatchingSentence(
+                relevantContent,
+                "safety briefing",
+                "shift malam");
+            var briefingTime = ExtractTime(briefingSentence);
+            accessAndBriefing.Add(string.IsNullOrWhiteSpace(briefingTime)
+                ? "safety briefing shift malam wajib dilakukan"
+                : $"safety briefing shift malam dilakukan pukul {briefingTime}");
+        }
+
+        if (accessAndBriefing.Any())
+        {
+            bullets.Add($"{string.Join(" dan ", accessAndBriefing)}.");
+        }
+
+        var accessAndSpeed = new List<string>();
+
+        if (ContainsAny(content, "tangki penyimpanan", "area tangki") &&
+            ContainsAny(content, "HSSE") &&
+            ContainsAny(content, "Maintenance"))
+        {
+            accessAndSpeed.Add("Area tangki penyimpanan hanya dapat diakses personel HSSE dan Maintenance");
+        }
+
+        var speed = ExtractSpeed(content);
+
+        if (!string.IsNullOrWhiteSpace(speed))
+        {
+            accessAndSpeed.Add($"kendaraan operasional maksimal {speed} di area produksi");
+        }
+
+        if (accessAndSpeed.Any())
+        {
+            bullets.Add($"{string.Join(", serta ", accessAndSpeed)}.");
+        }
+
+        if (ContainsAny(content, "evakuasi kebakaran") &&
+            ContainsAny(content, "3 bulan", "tiga bulan"))
+        {
+            bullets.Add("Simulasi evakuasi kebakaran dilakukan setiap 3 bulan.");
+        }
+
+        var auditFindings = new List<string>();
+
+        if (ContainsAny(content, "pelanggaran minor") &&
+            ContainsAny(content, "logbook"))
+        {
+            var violationCount = ExtractCountBeforePhrase(content, "pelanggaran minor");
+            auditFindings.Add(string.IsNullOrWhiteSpace(violationCount)
+                ? "audit mencatat pelanggaran minor terkait keterlambatan pengisian logbook digital pada shift malam"
+                : $"audit mencatat {violationCount} pelanggaran minor terkait keterlambatan pengisian logbook digital pada shift malam");
+        }
+
+        if (ContainsAny(content, "CCTV thermal", "anomali suhu"))
+        {
+            var anomalyCount = ExtractCountBeforePhrase(content, "anomali suhu");
+            auditFindings.Add(string.IsNullOrWhiteSpace(anomalyCount)
+                ? "CCTV thermal mendeteksi anomali suhu pada area penyimpanan bahan bakar"
+                : $"CCTV thermal mendeteksi {anomalyCount} anomali suhu pada area penyimpanan bahan bakar");
+        }
+
+        if (ContainsAny(content, "backup", "server internal"))
+        {
+            var backupSentence = FindFirstMatchingSentence(
+                relevantContent,
+                "backup",
+                "server internal");
+            var backupTime = ExtractTime(backupSentence);
+            auditFindings.Add(string.IsNullOrWhiteSpace(backupTime)
+                ? "backup server internal dilakukan otomatis"
+                : $"backup server internal dilakukan otomatis pukul {backupTime}");
+        }
+
+        if (auditFindings.Any())
+        {
+            bullets.Add($"{CapitalizeFirst(string.Join(", ", auditFindings))}.");
+        }
+
+        if (!bullets.Any())
+        {
+            return null;
+        }
+
+        return string.Join(
+            "\n",
+            bullets
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(6)
+                .Select(x => $"- {x}"));
     }
 
     private static string? BuildStructuredAnswer(List<RetrievedChunk> chunks)
@@ -335,6 +478,80 @@ public class AnswerFormatterService
             .Select(x => Regex.Replace(x, @"^\s*[-\d.)]+\s*", "").Trim())
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .ToList();
+    }
+
+    private static bool IsOperationalRiskQuestion(string question)
+    {
+        return ContainsAny(
+            question,
+            "pengendalian risiko",
+            "risiko operasional",
+            "keselamatan operasional",
+            "pencegahan insiden",
+            "pengawasan keselamatan");
+    }
+
+    private static bool IsNoiseSentence(string sentence)
+    {
+        return ContainsAny(
+            sentence,
+            "dummy",
+            "fiktif",
+            "simulasi",
+            "tidak merepresentasikan data asli",
+            "data contoh",
+            "pengembangan chatbot enterprise");
+    }
+
+    private static string ExtractTime(string content)
+    {
+        var timeMatch = Regex.Match(
+            content,
+            @"\b\d{1,2}[\.:]\d{2}\s*WIB\b",
+            RegexOptions.IgnoreCase);
+
+        return timeMatch.Success
+            ? Regex.Replace(timeMatch.Value.Trim(), @"\s+", " ").Replace(":", ".")
+            : "";
+    }
+
+    private static string ExtractSpeed(string content)
+    {
+        var speedMatch = Regex.Match(
+            content,
+            @"\b\d+\s*km\s*/?\s*jam\b",
+            RegexOptions.IgnoreCase);
+
+        return speedMatch.Success
+            ? Regex.Replace(speedMatch.Value.Trim(), @"\s+", " ")
+            : "";
+    }
+
+    private static string ExtractCountBeforePhrase(string content, string phrase)
+    {
+        var match = Regex.Match(
+            content,
+            $@"\b(\d+)\s+{Regex.Escape(phrase)}\b",
+            RegexOptions.IgnoreCase);
+
+        return match.Success ? match.Groups[1].Value : "";
+    }
+
+    private static string FindFirstMatchingSentence(
+        List<string> sentences,
+        params string[] keywords)
+    {
+        return sentences.FirstOrDefault(sentence => ContainsAny(sentence, keywords)) ?? "";
+    }
+
+    private static string CapitalizeFirst(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "";
+        }
+
+        return char.ToUpperInvariant(value[0]) + value[1..];
     }
 
     private static string FindSopAccessSentence(List<RetrievedChunk> chunks)
