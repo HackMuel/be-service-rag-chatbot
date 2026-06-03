@@ -40,9 +40,21 @@ public class RagChatService
             "RAG query received, length={QueryLength}",
             question.Length);
 
-        var analysis = _queryAnalyzerService.Analyze(question);
+        var analysis = await _queryAnalyzerService.AnalyzeAsync(question);
 
         var retrievalResult = await _retrievalService.RetrieveAsync(analysis);
+
+        if (retrievalResult.AnswerLevel == AnswerLevel.Blocked ||
+            retrievalResult.RetrievalMode == "blocked")
+        {
+            return new ChatResponse
+            {
+                Answer = string.IsNullOrWhiteSpace(retrievalResult.BlockReason)
+                    ? "Maaf, saya tidak menemukan informasi tersebut."
+                    : retrievalResult.BlockReason,
+                Sources = new List<string>()
+            };
+        }
 
         var relevantChunks = retrievalResult.Chunks;
         var retrievalMode = retrievalResult.RetrievalMode;
@@ -59,6 +71,22 @@ public class RagChatService
                 ResolveRecordType(chunk),
                 chunk.Similarity,
                 chunk.ChunkIndex);
+        }
+
+        var personalTypes = relevantChunks
+            .Select(ResolveRecordType)
+            .Where(t => t is "employee" or "overtime")
+            .Distinct()
+            .OrderBy(t => t)
+            .ToList();
+
+        if (personalTypes.Any())
+        {
+            _logger.LogInformation(
+                "PERSONAL_DATA_ACCESS queryLength={QueryLength}, recordTypes={RecordTypes}, chunkCount={ChunkCount}, isBlocked=false",
+                question.Length,
+                string.Join(",", personalTypes),
+                relevantChunks.Count);
         }
 
         if (!relevantChunks.Any())

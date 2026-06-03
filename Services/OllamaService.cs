@@ -99,6 +99,42 @@ public class OllamaService
         return result.response.ToString();
     }
 
+    public async Task<string> CompleteAsync(string systemPrompt, string userMessage)
+    {
+        var request = new
+        {
+            model = ChatModel,
+            messages = new[]
+            {
+                new { role = "system", content = systemPrompt },
+                new { role = "user",   content = userMessage  }
+            },
+            stream = false
+        };
+
+        var response = await HttpResponseGuard.SendAsync(
+            () => _httpClient.PostAsync(
+                "api/chat",
+                new StringContent(
+                    JsonConvert.SerializeObject(request),
+                    Encoding.UTF8,
+                    "application/json")),
+            _logger,
+            "Ollama complete",
+            BaseUrl
+        );
+
+        await HttpResponseGuard.EnsureSuccessAsync(
+            response,
+            _logger,
+            "Ollama complete",
+            BaseUrl);
+
+        var json = await response.Content.ReadAsStringAsync();
+        dynamic result = JsonConvert.DeserializeObject(json)!;
+        return result.message.content.ToString();
+    }
+
     private string BaseUrl => string.IsNullOrWhiteSpace(_options.BaseUrl)
         ? OllamaOptions.DefaultBaseUrl
         : _options.BaseUrl.TrimEnd('/');

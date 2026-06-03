@@ -471,14 +471,8 @@ public class AnswerFormatterService
             .FirstOrDefault(sentence => ContainsAny(sentence, keywords)) ?? "";
     }
 
-    private static List<string> ExtractSentences(string content)
-    {
-        return Regex
-            .Split(content, @"(?<=[.!?])\s+|\r?\n+")
-            .Select(x => Regex.Replace(x, @"^\s*[-\d.)]+\s*", "").Trim())
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .ToList();
-    }
+    private static List<string> ExtractSentences(string content) =>
+        QueryHelpers.ExtractSentences(content);
 
     private static bool IsOperationalRiskQuestion(string question)
     {
@@ -667,12 +661,8 @@ public class AnswerFormatterService
         return recordType is "employee" or "overtime" or "maintenance";
     }
 
-    private static string ResolveRecordType(RetrievedChunk chunk)
-    {
-        return string.IsNullOrWhiteSpace(chunk.RecordType)
-            ? ChunkMetadataExtractor.DetectRecordType(chunk.Content)
-            : chunk.RecordType;
-    }
+    private static string ResolveRecordType(RetrievedChunk chunk) =>
+        QueryHelpers.ResolveRecordType(chunk);
 
     private static string ValueOrFallback(string value, string fallback)
     {
@@ -682,11 +672,8 @@ public class AnswerFormatterService
         return string.IsNullOrWhiteSpace(fallback) ? "-" : fallback;
     }
 
-    private static bool ContainsAny(string value, params string[] keywords)
-    {
-        return keywords.Any(keyword =>
-            value.Contains(keyword, StringComparison.OrdinalIgnoreCase));
-    }
+    private static bool ContainsAny(string value, params string[] keywords) =>
+        QueryHelpers.ContainsAny(value, keywords);
 
     private static void AppendEmployeeAnswer(
     List<string> lines,

@@ -38,4 +38,8 @@ public class RagQueryAnalysis
     public bool RequiresGroundedLlm { get; set; }
     public string TargetRecordType { get; set; } = string.Empty;
     public string GenericRecordType { get; set; } = string.Empty;
+
+    public List<string> RequestedFields { get; set; } = new();
+    public bool IsBlocked { get; set; }
+    public string BlockReason { get; set; } = string.Empty;
 }

@@ -1,5 +1,4 @@
 using be_service.Models;
-using System.Text.RegularExpressions;
 
 namespace be_service.Services;
 
@@ -135,12 +134,8 @@ Content:
         return string.Join("\n", cleanedSegments);
     }
 
-    private static IEnumerable<string> SplitContextSegments(string content)
-    {
-        return Regex.Split(
-            content,
-            @"(?<=[.!?])\s+|\r?\n+");
-    }
+    private static IEnumerable<string> SplitContextSegments(string content) =>
+        QueryHelpers.SplitContentSegments(content);
 
     private static bool IsNoiseDisclaimer(string value)
     {
@@ -154,12 +149,8 @@ Content:
             "pengembangan chatbot enterprise");
     }
 
-    private static string ResolveRecordType(RetrievedChunk chunk)
-    {
-        return string.IsNullOrWhiteSpace(chunk.RecordType)
-            ? ChunkMetadataExtractor.DetectRecordType(chunk.Content)
-            : chunk.RecordType;
-    }
+    private static string ResolveRecordType(RetrievedChunk chunk) =>
+        QueryHelpers.ResolveRecordType(chunk);
 
     private static string ValueOrFallback(string value, string fallback)
     {
@@ -169,9 +160,6 @@ Content:
         return string.IsNullOrWhiteSpace(fallback) ? "-" : fallback;
     }
 
-    private static bool ContainsAny(string value, params string[] keywords)
-    {
-        return keywords.Any(keyword =>
-            value.Contains(keyword, StringComparison.OrdinalIgnoreCase));
-    }
+    private static bool ContainsAny(string value, params string[] keywords) =>
+        QueryHelpers.ContainsAny(value, keywords);
 }

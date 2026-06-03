@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "code-quality": {
+      "source": "miles990/claude-software-skills",
+      "sourceType": "github",
+      "skillPath": "software-engineering/code-quality/SKILL.md",
+      "computedHash": "9240a07ca25f58de6f847ecb26446ea4e0d5901915751e790f9da92223e46745"
+    }
+  }
+}

@@ -65,12 +65,15 @@ public class DocumentIngestionOrchestrator
 
         var normalizedContent = _textNormalizer.Normalize(request.Content);
         var chunks = _chunkingService.SplitBySections(normalizedContent);
-        Console.WriteLine($"TOTAL CHUNKS: {chunks.Count}");
+        _logger.LogDebug("TOTAL CHUNKS: {ChunkCount}", chunks.Count);
 
         for (int i = 0; i < chunks.Count; i++)
         {
-            Console.WriteLine(
-                $"CHUNK {i}: type={ChunkMetadataExtractor.DetectRecordType(chunks[i])}, length={chunks[i].Length}");
+            _logger.LogDebug(
+                "CHUNK {Index}: type={RecordType}, length={Length}",
+                i,
+                ChunkMetadataExtractor.DetectRecordType(chunks[i]),
+                chunks[i].Length);
         }
 
         _logger.LogInformation(
