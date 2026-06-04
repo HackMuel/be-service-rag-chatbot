@@ -300,8 +300,7 @@ public class QdrantScrollClient
             "tampilkan",
             "berikan",
             "data",
-            "perusahaan",
-            "pertamina"
+            "perusahaan"
         };
 
         return stopWords.Contains(value, StringComparer.OrdinalIgnoreCase);

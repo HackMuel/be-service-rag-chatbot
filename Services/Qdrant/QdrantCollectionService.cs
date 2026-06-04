@@ -22,16 +22,21 @@ public class QdrantCollectionService
 
     public async Task EnsureCollectionAsync()
     {
+        var size = _options.VectorSize > 0 ? _options.VectorSize : QdrantOptions.DefaultVectorSize;
+        var distance = string.IsNullOrWhiteSpace(_options.Distance)
+            ? QdrantOptions.DefaultDistance
+            : _options.Distance;
+
+        // Named vectors: "dense" (Cosine, 768-dim) + "sparse" (BM25 TF, on-disk=false)
         var body = new
         {
-            vectors = new
+            vectors = new Dictionary<string, object>
             {
-                size = _options.VectorSize > 0
-                    ? _options.VectorSize
-                    : QdrantOptions.DefaultVectorSize,
-                distance = string.IsNullOrWhiteSpace(_options.Distance)
-                    ? QdrantOptions.DefaultDistance
-                    : _options.Distance
+                ["dense"] = new { size, distance }
+            },
+            sparse_vectors = new Dictionary<string, object>
+            {
+                ["sparse"] = new { index = new { on_disk = false } }
             }
         };
 
@@ -54,6 +59,30 @@ public class QdrantCollectionService
         }
 
         await EnsurePayloadIndexesAsync();
+    }
+
+    // Drops and recreates the collection with the current schema.
+    // Call this endpoint when migrating from unnamed → named vectors.
+    // All data will be lost — re-ingest is required afterward.
+    public async Task ForceRecreateCollectionAsync()
+    {
+        _logger.LogWarning(
+            "COLLECTION_RECREATE dropping collection={CollectionName}", CollectionName);
+
+        var deleteResponse = await _httpClient.DeleteAsync(
+            $"{BaseUrl}/collections/{CollectionName}");
+
+        if (!deleteResponse.IsSuccessStatusCode &&
+            deleteResponse.StatusCode != System.Net.HttpStatusCode.NotFound)
+        {
+            _logger.LogWarning(
+                "COLLECTION_DELETE status={Status}", deleteResponse.StatusCode);
+        }
+
+        await EnsureCollectionAsync();
+
+        _logger.LogInformation(
+            "COLLECTION_RECREATE done, collection={CollectionName}", CollectionName);
     }
 
     private async Task EnsurePayloadIndexesAsync()

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using be_service.Models;
+using Microsoft.Extensions.Options;
 
 namespace be_service.Services;
 
@@ -36,16 +37,21 @@ public class StructuredEntityResolver
 
     private readonly QdrantService _qdrantService;
     private readonly ILogger<StructuredEntityResolver> _logger;
+    private readonly double _fuzzyMultiTokenThreshold;
+    private readonly double _fuzzySingleTokenThreshold;
     private readonly SemaphoreSlim _cacheLock = new(1, 1);
     private List<StructuredEntityMatch> _cachedKnownEntities = new();
     private DateTimeOffset _cacheExpiresAt = DateTimeOffset.MinValue;
 
     public StructuredEntityResolver(
         QdrantService qdrantService,
-        ILogger<StructuredEntityResolver> logger)
+        ILogger<StructuredEntityResolver> logger,
+        IOptions<RetrievalOptions> retrievalOptions)
     {
         _qdrantService = qdrantService;
         _logger = logger;
+        _fuzzyMultiTokenThreshold = retrievalOptions.Value.FuzzyMultiTokenThreshold;
+        _fuzzySingleTokenThreshold = retrievalOptions.Value.FuzzySingleTokenThreshold;
     }
 
     public async Task<StructuredEntityMatch?> ResolveAsync(
@@ -180,7 +186,7 @@ public class StructuredEntityResolver
         };
     }
 
-    private static StructuredEntityMatch? BuildFuzzyMatch(
+    private StructuredEntityMatch? BuildFuzzyMatch(
         StructuredEntityMatch entity,
         string normalizedQuestion,
         RagQueryAnalysis analysis)
@@ -343,14 +349,14 @@ public class StructuredEntityResolver
             "technician";
     }
 
-    private static bool PassesFuzzyThreshold(
+    private bool PassesFuzzyThreshold(
         double score,
         int distance,
         List<string> entityTokens)
     {
         if (entityTokens.Count > 1)
         {
-            return score >= 0.85;
+            return score >= _fuzzyMultiTokenThreshold;
         }
 
         var tokenLength = entityTokens[0].Length;
@@ -360,7 +366,7 @@ public class StructuredEntityResolver
             return false;
         }
 
-        return score >= 0.90 ||
+        return score >= _fuzzySingleTokenThreshold ||
                (tokenLength >= 7 && distance == 1);
     }
 

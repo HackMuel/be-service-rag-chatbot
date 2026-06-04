@@ -1,6 +1,7 @@
 using be_service.Models;
 using be_service.Repositories;
 using be_service.Services;
+using Microsoft.Extensions.Options;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -10,11 +11,23 @@ builder.Services.AddSingleton<QdrantSearchClient>();
 builder.Services.AddSingleton<QdrantFilterBuilder>();
 builder.Services.AddSingleton<QdrantScrollClient>();
 builder.Services.AddSingleton<QdrantService>();
+builder.Services.AddSingleton<SparseBm25Encoder>();
+builder.Services.AddSingleton(sp =>
+{
+    var opts = sp.GetRequiredService<IOptions<QdrantOptions>>().Value;
+    var host = new Uri(
+        string.IsNullOrWhiteSpace(opts.BaseUrl)
+            ? QdrantOptions.DefaultBaseUrl
+            : opts.BaseUrl).Host;
+    var port = opts.GrpcPort > 0 ? opts.GrpcPort : QdrantOptions.DefaultGrpcPort;
+    return new Qdrant.Client.QdrantClient(host, port, https: false);
+});
 builder.Services.AddHttpClient<OllamaService>();
 builder.Services.AddControllers();
 builder.Services.AddScoped<IngestionService>();
 builder.Services.AddScoped<FieldIntentClassifier>();
 builder.Services.AddScoped<QueryAnalyzerService>();
+builder.Services.AddScoped<QueryUnderstandingService>();
 builder.Services.AddSingleton<AnswerFormatterService>();
 builder.Services.AddSingleton<PromptBuilderService>();
 builder.Services.AddSingleton<StructuredEntityResolver>();
@@ -30,6 +43,8 @@ builder.Services.Configure<QdrantOptions>(
     builder.Configuration.GetSection("Qdrant"));
 builder.Services.Configure<RetrievalOptions>(
     builder.Configuration.GetSection("Retrieval"));
+builder.Services.Configure<RagModeOptions>(
+    builder.Configuration.GetSection("Rag"));
 builder.Services.AddScoped<ObjectStorageService>();
 builder.Services.AddScoped<RetrievalService>();
 builder.Services.AddScoped<PdfTextExtractor>();
@@ -157,6 +172,16 @@ app.MapGet("/api/qdrant/init", async (QdrantService qdrantService) =>
     return Results.Ok(new
     {
         message = "Qdrant collection ready"
+    });
+});
+
+app.MapPost("/api/qdrant/recreate", async (QdrantService qdrantService) =>
+{
+    await qdrantService.ForceRecreateCollectionAsync();
+
+    return Results.Ok(new
+    {
+        message = "Collection recreated with named vectors schema. Re-ingest all documents."
     });
 });
 

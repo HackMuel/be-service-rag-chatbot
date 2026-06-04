@@ -28,7 +28,8 @@ public class QdrantPointWriter
         string content,
         List<float> embedding,
         int chunkIndex = -1,
-        string department = "")
+        string department = "",
+        Dictionary<uint, float>? sparseVector = null)
     {
         var chunk = new RetrievedChunk
         {
@@ -56,13 +57,16 @@ public class QdrantPointWriter
             ChunkIndex = chunkIndex
         };
 
-        await UpsertChunkAsync(chunk, embedding);
+        await UpsertChunkAsync(chunk, embedding, sparseVector);
     }
 
     public async Task UpsertChunkAsync(
         RetrievedChunk chunk,
-        List<float> embedding)
+        List<float> denseEmbedding,
+        Dictionary<uint, float>? sparseVector = null)
     {
+        var vectorPayload = BuildVectorPayload(denseEmbedding, sparseVector);
+
         var body = new
         {
             points = new[]
@@ -70,7 +74,7 @@ public class QdrantPointWriter
                 new
                 {
                     id = chunk.Id.ToString(),
-                    vector = embedding,
+                    vector = vectorPayload,
                     payload = BuildPayload(chunk)
                 }
             }
@@ -90,6 +94,58 @@ public class QdrantPointWriter
             _logger,
             "Qdrant point upsert",
             BaseUrl);
+    }
+
+    // Deletes all points for a given documentId via payload filter.
+    // Used before re-ingesting a document to avoid duplicates.
+    public async Task DeleteByDocumentIdAsync(Guid documentId)
+    {
+        var body = new
+        {
+            filter = new
+            {
+                must = new[]
+                {
+                    new { key = "documentId", match = new { value = documentId.ToString() } }
+                }
+            }
+        };
+
+        var response = await HttpResponseGuard.SendAsync(
+            () => _httpClient.PostAsync(
+                $"{BaseUrl}/collections/{CollectionName}/points/delete",
+                new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")),
+            _logger,
+            "Qdrant delete by documentId",
+            BaseUrl
+        );
+
+        await HttpResponseGuard.EnsureSuccessAsync(
+            response,
+            _logger,
+            "Qdrant delete by documentId",
+            BaseUrl);
+    }
+
+    private static object BuildVectorPayload(
+        List<float> dense,
+        Dictionary<uint, float>? sparse)
+    {
+        if (sparse is { Count: > 0 })
+        {
+            var sorted = sparse.OrderBy(kv => kv.Key).ToList();
+            return new
+            {
+                dense,
+                sparse = new
+                {
+                    indices = sorted.Select(kv => (int)kv.Key).ToArray(),
+                    values  = sorted.Select(kv => kv.Value).ToArray()
+                }
+            };
+        }
+
+        return new { dense };
     }
 
     private static object BuildPayload(RetrievedChunk chunk)

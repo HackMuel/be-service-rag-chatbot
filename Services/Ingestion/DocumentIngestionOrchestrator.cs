@@ -14,6 +14,7 @@ public class DocumentIngestionOrchestrator
     private readonly QdrantService _qdrantService;
     private readonly ChunkRepository _chunkRepository;
     private readonly StorageModeOptions _storageModeOptions;
+    private readonly bool _hybridSearchEnabled;
     private readonly ILogger<DocumentIngestionOrchestrator> _logger;
 
     public DocumentIngestionOrchestrator(
@@ -24,6 +25,7 @@ public class DocumentIngestionOrchestrator
         QdrantService qdrantService,
         ChunkRepository chunkRepository,
         IOptions<StorageModeOptions> storageModeOptions,
+        IOptions<RetrievalOptions> retrievalOptions,
         ILogger<DocumentIngestionOrchestrator> logger)
     {
         _configuration = configuration;
@@ -33,6 +35,7 @@ public class DocumentIngestionOrchestrator
         _qdrantService = qdrantService;
         _chunkRepository = chunkRepository;
         _storageModeOptions = storageModeOptions.Value;
+        _hybridSearchEnabled = retrievalOptions.Value.HybridSearchEnabled;
         _logger = logger;
     }
 
@@ -98,9 +101,11 @@ public class DocumentIngestionOrchestrator
 
             var embedding = await _embeddingIngestionService.GenerateEmbeddingAsync(chunks[i]);
 
-            await _qdrantService.UpsertChunkAsync(
-                chunk,
-                embedding);
+            Dictionary<uint, float>? sparseVector = null;
+            if (_hybridSearchEnabled)
+                sparseVector = _embeddingIngestionService.GenerateSparseVector(chunks[i]);
+
+            await _qdrantService.UpsertChunkAsync(chunk, embedding, sparseVector);
         }
 
         return documentId;

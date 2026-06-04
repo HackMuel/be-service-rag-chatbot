@@ -8,6 +8,7 @@ public class RetrievalService
 {
     private readonly QdrantService _qdrantService;
     private readonly OllamaService _ollamaService;
+    private readonly SparseBm25Encoder _sparseEncoder;
     private readonly StructuredEntityResolver _structuredEntityResolver;
     private readonly RetrievalOptions _retrievalOptions;
     private readonly ILogger<RetrievalService> _logger;
@@ -18,10 +19,12 @@ public class RetrievalService
         ChunkRepository chunkRepository,
         StructuredEntityResolver structuredEntityResolver,
         IOptions<RetrievalOptions> retrievalOptions,
+        SparseBm25Encoder sparseEncoder,
         ILogger<RetrievalService> logger)
     {
         _qdrantService = qdrantService;
         _ollamaService = ollamaService;
+        _sparseEncoder = sparseEncoder;
         _structuredEntityResolver = structuredEntityResolver;
         _retrievalOptions = retrievalOptions.Value;
         _logger = logger;
@@ -274,7 +277,11 @@ public class RetrievalService
         {
             var embedding = await _ollamaService.GenerateEmbeddingAsync(analysis.Question);
 
-            var vectorHits = await _qdrantService.SearchSemanticAsync(embedding, SemanticTopK);
+            Dictionary<uint, float>? sparseVector = null;
+            if (_retrievalOptions.HybridSearchEnabled)
+                sparseVector = _sparseEncoder.Encode(analysis.Question);
+
+            var vectorHits = await _qdrantService.SearchSemanticAsync(embedding, SemanticTopK, sparseVector);
             qdrantVectorSearch = true;
 
             vectorHits = vectorHits
@@ -313,6 +320,44 @@ public class RetrievalService
             AnswerLevel = analysis.AnswerLevel,
             RetrievalSource = retrievalSource,
             QdrantVectorSearch = qdrantVectorSearch
+        };
+    }
+
+    // Pure vector search — no keyword cascade, no record-type filter.
+    // Used by the semantic dispatch path when RagMode = Hybrid.
+    public async Task<RagRetrievalResult> SearchSemanticOnlyAsync(string question)
+    {
+        _logger.LogInformation(
+            "SEMANTIC_ONLY query length={Length}", question.Length);
+
+        var embedding = await _ollamaService.GenerateEmbeddingAsync(question);
+
+        Dictionary<uint, float>? sparseVector = null;
+        if (_retrievalOptions.HybridSearchEnabled)
+            sparseVector = _sparseEncoder.Encode(question);
+
+        var hits = await _qdrantService.SearchSemanticAsync(embedding, SemanticTopK, sparseVector);
+
+        var chunks = hits
+            .Where(x => x.Similarity >= SemanticScoreThreshold)
+            .Where(x => !string.IsNullOrWhiteSpace(x.Content))
+            .OrderByDescending(x => x.Similarity)
+            .Take(SemanticMaxContextChunks)
+            .ToList();
+
+        _logger.LogInformation(
+            "SEMANTIC_ONLY count={Count}, topScore={Score:F3}",
+            chunks.Count,
+            chunks.FirstOrDefault()?.Similarity ?? 0f);
+
+        return new RagRetrievalResult
+        {
+            Chunks = chunks,
+            RetrievalMode = "semantic",
+            ContextLimit = SemanticMaxContextChunks,
+            AnswerLevel = AnswerLevel.SemanticGrounded,
+            RetrievalSource = "qdrant_vector_payload",
+            QdrantVectorSearch = true
         };
     }
 
