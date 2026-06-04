@@ -118,6 +118,62 @@ B4/B5/D1 karena LLM mengembalikan JSON valid tapi salah isi. Belum layak melepas
 fallback / menghapus legacy. Perbaikan kandidat: perkuat few-shot prompt untuk
 position & approval, pertegas batas audit vs sop.
 
+---
+
+## Pengukuran Mode Semantic — setelah perbaikan prompt (2026-06-04)
+
+Perbaikan di `QueryUnderstandingService` (hanya prompt + temperature + retry, tanpa
+ubah arsitektur): few-shot eksplisit position/approval + daftar nilai valid, pertegas
+batas sop-vs-audit, `temperature=0`, instruksi "raw JSON only", 1× retry sebelum fallback.
+
+**Regresi: 3/3 TERATASI**
+
+| Query | Sebelum | Sesudah | Bukti |
+|-------|---------|---------|-------|
+| B4 supervisor | ❌ not found | ✅ 2 Supervisor (Agus, Nadia) | intent=employee, `employee_by_position`, chunks=2 |
+| B5 lembur disetujui | ❌ not found | ✅ 15 record Disetujui | intent=overtime, `overtime_by_approval`, chunks=15 |
+| D1 aturan APD | ❌ jawab 97,4% (audit) | ✅ aturan SOP APD | intent=sop, `sop_general`, chunks=1 |
+
+Bonus: **C3** (`teknisi MT-002`) analyzer kini benar (intent=maintenance, code=MT-002)
+— sebelumnya salah intent=semantic. Jawaban tetap "not found" (MT-002 tak ada di data).
+
+**Parse failure (sebelumnya D3, E2, F1 — reason=parse):**
+
+| Query | Hasil | Catatan |
+|-------|-------|---------|
+| E2 `nama unit perusahaan` | ✅ FIXED | Kini terparse via LLM (intent=profile), tanpa fallback |
+| F1 `prosedur operasional kilang` | ⚠️ tetap fallback-parse | Retry 1× tak menolong; jawaban benar via fallback legacy |
+| D3 `SOP keamanan berlaku` | ⚠️ fallback-error | Bukan lagi parse-fail — LLM analysis call timeout (latensi qwen2.5:1.5b di bawah beban). Jawaban benar via fallback; saat diberi waktu cukup, jalur normal pun benar |
+
+**Fallback rate:** 15/17 ditangani LLM tanpa fallback (vs 14/17 sebelumnya). 2/17
+fallback (D3=error/timeout, F1=parse). Retry terpicu 1× (F1).
+
+**Catatan:** Semua jawaban akhir 17 query benar (atau "not found" yang benar untuk
+A1/A2/A3/C3 yang identifier-nya memang tak ada di data). Tidak ada regresi tersisa.
+D3/F1 masih bergantung fallback → pelepasan fallback tetap ditunda; F1 perlu prompt
+JSON lebih ketat, D3 perlu mitigasi latensi (timeout/model lebih besar).
+
+---
+
+## Fix tambahan: query "list semua" (2026-06-04)
+
+Regresi terlapor: `berikan saya semua data karyawan` → kosong (sebelumnya bisa).
+
+**Akar masalah:** `QueryUnderstandingService.DetermineAnswerLevel` memetakan intent
+employee/overtime/maintenance TANPA filter ke `SemanticGrounded`. Di mode Semantic,
+`SemanticGrounded` dibelokkan ke `AskSemanticAsync` (vektor murni) sebelum mencapai
+jalur `GenericRecordType` scroll di `RetrieveAsync` → hasil kosong. Legacy memetakan
+generic record type employee/overtime/maintenance ke `ExactStructured`.
+
+**Fix:** intent employee/overtime/maintenance tanpa filter → `ExactStructured`
+(mirror legacy). Verifikasi:
+
+| Query | Mode | Hasil |
+|-------|------|-------|
+| `berikan saya semua data karyawan` | `employee_general` | ✅ 40 karyawan |
+| `rekap lembur semua karyawan` | `overtime_general` | ✅ 30 record |
+| `semua log maintenance` | `maintenance_general` | ✅ 24 record |
+
 ----------------------------------------------------------------------------- |
 
 POST /api/chat

@@ -99,18 +99,33 @@ public class OllamaService
         return result.response.ToString();
     }
 
-    public async Task<string> CompleteAsync(string systemPrompt, string userMessage)
+    public async Task<string> CompleteAsync(
+        string systemPrompt,
+        string userMessage,
+        double? temperature = null)
     {
-        var request = new
-        {
-            model = ChatModel,
-            messages = new[]
+        object request = temperature is null
+            ? new
             {
-                new { role = "system", content = systemPrompt },
-                new { role = "user",   content = userMessage  }
-            },
-            stream = false
-        };
+                model = ChatModel,
+                messages = new[]
+                {
+                    new { role = "system", content = systemPrompt },
+                    new { role = "user",   content = userMessage  }
+                },
+                stream = false
+            }
+            : new
+            {
+                model = ChatModel,
+                messages = new[]
+                {
+                    new { role = "system", content = systemPrompt },
+                    new { role = "user",   content = userMessage  }
+                },
+                stream = false,
+                options = new { temperature = temperature.Value }
+            };
 
         var response = await HttpResponseGuard.SendAsync(
             () => _httpClient.PostAsync(

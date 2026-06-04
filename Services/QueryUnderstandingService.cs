@@ -14,19 +14,33 @@ public class QueryUnderstandingService
     private readonly ILogger<QueryUnderstandingService> _logger;
 
     private const string SystemPrompt = """
-        Kamu adalah query classifier. Analisis pertanyaan dan kembalikan JSON saja — tanpa teks lain.
+        Kamu adalah query classifier. Respond ONLY with raw JSON. No explanation, no markdown, no backticks.
 
         Schema: {"intent":"employee|overtime|maintenance|sop|audit|profile|policy|semantic","entities":{"name":"","nik":"","code":"","date":"","division":"","shift":"","status":"","position":"","location":"","approval":"","technician":"","equipment":""},"is_policy":false,"is_access":false}
 
         Intent: employee=data karyawan, overtime=rekap lembur, maintenance=log peralatan, sop=aturan/SOP, audit=audit/kepatuhan, profile=profil perusahaan, policy=siapa yang boleh/tidak boleh, semantic=pertanyaan umum/penjelasan.
         Isi hanya entities yang disebutkan eksplisit. Kosongkan yang tidak ada.
 
+        BATAS sop vs audit:
+        - Pertanyaan tentang cara/aturan/prosedur/kewajiban → intent=sop. Contoh: "aturan APD", "bagaimana prosedur", "apa SOP".
+        - Pertanyaan tentang angka/persentase/tingkat kepatuhan/hasil audit → intent=audit. Contoh: "berapa persen kepatuhan", "tingkat kepatuhan APD".
+
+        NILAI VALID (petakan bahasa informal ke nilai eksak ini):
+        - position: Supervisor | Operator | Manager | Coordinator | Analyst | Engineer | Staff. Contoh: "siapa supervisor" → position="Supervisor".
+        - approval: Disetujui | Ditolak | Pending. Contoh: "sudah disetujui"/"yang di-approve" → approval="Disetujui"; "ditolak" → "Ditolak"; "belum diproses"/"menunggu" → "Pending".
+        - status: Tetap | Kontrak.
+        - shift: A | B | C.
+
         Q: "sinta lestari bekerja di divisi apa?" → {"intent":"employee","entities":{"name":"sinta lestari"},"is_policy":false,"is_access":false}
         Q: "siapa yang boleh masuk area tangki?" → {"intent":"sop","entities":{},"is_policy":true,"is_access":true}
         Q: "karyawan shift A divisi IT" → {"intent":"employee","entities":{"division":"IT & Digitalisasi","shift":"A"},"is_policy":false,"is_access":false}
-        Q: "berapa persen kepatuhan APD?" → {"intent":"audit","entities":{},"is_policy":false,"is_access":false}
-        Q: "bagaimana prosedur operasional kilang?" → {"intent":"semantic","entities":{},"is_policy":false,"is_access":false}
+        Q: "siapa supervisor di perusahaan ini?" → {"intent":"employee","entities":{"position":"Supervisor"},"is_policy":false,"is_access":false}
+        Q: "rekap lembur yang sudah disetujui" → {"intent":"overtime","entities":{"approval":"Disetujui"},"is_policy":false,"is_access":false}
         Q: "rekap lembur yang ditolak" → {"intent":"overtime","entities":{"approval":"Ditolak"},"is_policy":false,"is_access":false}
+        Q: "apa aturan APD di area produksi?" → {"intent":"sop","entities":{},"is_policy":false,"is_access":false}
+        Q: "berapa persen kepatuhan APD?" → {"intent":"audit","entities":{},"is_policy":false,"is_access":false}
+        Q: "berapa tingkat kepatuhan APD?" → {"intent":"audit","entities":{},"is_policy":false,"is_access":false}
+        Q: "bagaimana prosedur operasional kilang?" → {"intent":"semantic","entities":{},"is_policy":false,"is_access":false}
         Q: "log maintenance kode MT-001" → {"intent":"maintenance","entities":{"code":"MT-001"},"is_policy":false,"is_access":false}
         Q: "apa nama unit perusahaan?" → {"intent":"profile","entities":{},"is_policy":false,"is_access":false}
         """;
@@ -53,8 +67,16 @@ public class QueryUnderstandingService
 
         try
         {
-            var raw = await _ollamaService.CompleteAsync(SystemPrompt, question);
+            var raw = await _ollamaService.CompleteAsync(SystemPrompt, question, temperature: 0);
             var llmResult = ParseLlmResult(raw);
+
+            // One retry on unparseable output before falling back to the keyword analyzer.
+            if (llmResult is null)
+            {
+                _logger.LogInformation("QUS_RETRY length={Length}, JSON unparseable, retrying", question.Length);
+                raw = await _ollamaService.CompleteAsync(SystemPrompt, question, temperature: 0);
+                llmResult = ParseLlmResult(raw);
+            }
 
             if (llmResult is null)
             {
@@ -252,6 +274,14 @@ public class QueryUnderstandingService
         var hasMaintenanceFilter = isMaintenance && (!string.IsNullOrWhiteSpace(location) || !string.IsNullOrWhiteSpace(technician));
 
         if (hasEmployeeFilter || hasOvertimeFilter || hasMaintenanceFilter || looksLikeName)
+            return AnswerLevel.ExactStructured;
+
+        // Bare structured intent with no filter (e.g. "berikan semua data karyawan")
+        // → list-all via GenericRecordType scroll in RetrieveAsync. Mirrors legacy
+        // DetermineAnswerLevel, which maps a generic employee/overtime/maintenance
+        // record type to ExactStructured. Without this it falls through to
+        // SemanticGrounded and gets diverted to pure vector search → empty result.
+        if (intent is "employee" or "overtime" or "maintenance")
             return AnswerLevel.ExactStructured;
 
         if (intent is "sop" or "audit" or "profile" or "policy")
