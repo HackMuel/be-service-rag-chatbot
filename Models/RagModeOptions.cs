@@ -4,6 +4,13 @@ public class RagModeOptions
 {
     public string Mode { get; set; } = "Legacy";
 
+    // Measurement scaffolding (Semantic mode only): when true, every query also
+    // runs the legacy keyword analyzer and logs the Semantic-vs-legacy diff
+    // (QUS_VS_LEGACY). This adds an extra analyzer pass — and occasionally an LLM
+    // call (FieldIntentClassifier) — on the critical path, so keep it off in
+    // normal operation and enable only when comparing analyzers.
+    public bool ShadowCompare { get; set; } = false;
+
     // Hybrid: semantic dispatch for SemanticGrounded queries (dense+sparse search)
     public bool IsHybridMode =>
         string.Equals(Mode, "Hybrid", StringComparison.OrdinalIgnoreCase);

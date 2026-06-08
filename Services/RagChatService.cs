@@ -47,7 +47,8 @@ public class RagChatService
         {
             analysis = await _queryUnderstandingService.AnalyzeAsync(question);
             LogFallbackUsage(analysis);
-            await ShadowCompareLegacyAsync(analysis);
+            if (_ragMode.ShadowCompare)
+                await ShadowCompareLegacyAsync(analysis);
         }
         else
         {
