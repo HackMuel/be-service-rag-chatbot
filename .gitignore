@@ -1,5 +1,7 @@
 bin/
 obj/
 .vscode/
-.envappsettings.json
+.env
+appsettings.json
 appsettings.*.json
+!appsettings.Example.json
