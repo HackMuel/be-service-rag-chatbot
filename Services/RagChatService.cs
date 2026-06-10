@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using be_service.Models;
 using Microsoft.Extensions.Options;
 
@@ -65,9 +66,11 @@ public class RagChatService
                 LogFallbackUsage(analysis);
                 if (_ragMode.ShadowCompare)
                     await ShadowCompareLegacyAsync(analysis);
-                // NEW: grounded abstention gate — don't trust an LLM structured route
-                // whose slots don't exist in the corpus; abstain to hybrid instead.
+                // Drop hallucinated hard identifiers, then run the corpus-grounding
+                // gate (slot values) and the intent-sanity gate (no anchor/slot/id).
+                StripPhantomIdentifiers(analysis);
                 await ApplyGroundingGateAsync(analysis);
+                ApplyIntentSanityGate(analysis);
             }
         }
         else
@@ -205,6 +208,115 @@ public class RagChatService
             string.Join(",", slots.Select(s => $"{s.Field}={s.Value}")));
 
         analysis.AnswerLevel = AnswerLevel.SemanticGrounded;
+    }
+
+    // Guard 1: the LLM sometimes invents hard identifiers (e.g. a "date" for
+    // "kapan ..."). Keep Nik/MaintenanceCode/Date only when the pattern actually
+    // appears in the query text — otherwise it would misroute to an exact lookup.
+    private static void StripPhantomIdentifiers(RagQueryAnalysis analysis)
+    {
+        var q = analysis.Question ?? "";
+
+        if (!string.IsNullOrWhiteSpace(analysis.Nik) &&
+            !Regex.IsMatch(q, @"\bRU\s*6\s*-?\s*\d{4}\b", RegexOptions.IgnoreCase))
+            analysis.Nik = "";
+
+        if (!string.IsNullOrWhiteSpace(analysis.MaintenanceCode) &&
+            !Regex.IsMatch(q, @"\bMT\s*-?\s*\d{3}\b", RegexOptions.IgnoreCase))
+            analysis.MaintenanceCode = "";
+
+        if (!string.IsNullOrWhiteSpace(analysis.Date) &&
+            !Regex.IsMatch(q, @"\b\d{2}-\d{2}-\d{4}\b"))
+            analysis.Date = "";
+    }
+
+    // Anchor keywords per intent — a query routed to a structured/dummy intent is
+    // expected to contain at least one of these. Used by the intent-sanity guard.
+    private static readonly Dictionary<string, string[]> IntentAnchors =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["employee"]    = new[] { "karyawan", "pegawai", "staff", "jabatan", "divisi", "shift" },
+            ["overtime"]    = new[] { "lembur", "overtime" },
+            ["maintenance"] = new[] { "maintenance", "perawatan", "teknisi", "peralatan", "alat" },
+            ["audit"]       = new[] { "audit", "kepatuhan", "pelanggaran", "anomali", "logbook" },
+            ["sop"]         = new[] { "sop", "aturan", "prosedur", "apd", "keselamatan", "safety",
+                                      "briefing", "evakuasi", "kecepatan", "area", "tangki", "akses", "kilang", "gate" },
+            ["profile"]     = new[] { "profil", "perusahaan", "unit", "kapasitas", "produksi", "direktur" },
+        };
+
+    // Guard 2: if the LLM picked a structured/dummy intent but the query carries no
+    // anchoring evidence for it (no domain keyword, no resolvable slot, no hard ID),
+    // the intent is likely hallucinated → route to hybrid semantic instead of a
+    // dummy structured path. Behavior-preserving for dummy queries (which always
+    // carry a domain keyword, a slot, or an identifier).
+    private void ApplyIntentSanityGate(RagQueryAnalysis analysis)
+    {
+        if (analysis.IsBlocked || analysis.AnswerLevel == AnswerLevel.SemanticGrounded)
+            return;
+
+        var hasHardIdentifier =
+            !string.IsNullOrWhiteSpace(analysis.Nik) ||
+            !string.IsNullOrWhiteSpace(analysis.MaintenanceCode) ||
+            !string.IsNullOrWhiteSpace(analysis.Date);
+        if (hasHardIdentifier)
+            return;
+
+        var intent = ResolveIntentName(analysis);
+        if (intent is null || !IntentAnchors.TryGetValue(intent, out var anchors))
+            return;
+
+        var q = analysis.Question ?? "";
+
+        // Keep the structured route when the query carries a domain keyword …
+        if (anchors.Any(k => q.Contains(k, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        // … or a *grounded* slot, i.e. a slot whose value actually appears in the
+        // query. A slot the LLM invented (value not in the text — e.g. approval
+        // "Disetujui" for a procurement-limit question) does NOT count.
+        if (HasGroundedSlot(analysis))
+            return;
+
+        _logger.LogInformation(
+            "INTENT_SANITY downgrade intent={Intent}->SemanticGrounded (no anchor/grounded-slot/id)",
+            intent);
+
+        analysis.AnswerLevel = AnswerLevel.SemanticGrounded;
+    }
+
+    // A slot is "grounded" when one of its value tokens appears in the query text.
+    private static bool HasGroundedSlot(RagQueryAnalysis a)
+    {
+        var q = a.Question ?? "";
+        var values = new[]
+        {
+            a.Division, a.Shift, a.EmployeeStatus, a.Position, a.Approval,
+            a.Location, a.MaintenanceStatus, a.Technician, a.PersonKeyword
+        };
+
+        foreach (var value in values)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                continue;
+            // Significant tokens only (>=2 letters) to avoid matching on "A"/"B".
+            foreach (Match token in Regex.Matches(value, @"[A-Za-z]{2,}"))
+            {
+                if (q.Contains(token.Value, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    private static string? ResolveIntentName(RagQueryAnalysis a)
+    {
+        if (a.IsEmployeeQuery) return "employee";
+        if (a.IsOvertimeQuery) return "overtime";
+        if (a.IsMaintenanceQuery) return "maintenance";
+        if (a.IsAuditQuery) return "audit";
+        if (a.IsSopQuery) return "sop";
+        if (a.IsProfileQuery) return "profile";
+        return null;
     }
 
     // Runs the legacy keyword analyzer alongside the LLM analyzer and logs how
