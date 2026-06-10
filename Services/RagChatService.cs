@@ -235,13 +235,13 @@ public class RagChatService
     private static readonly Dictionary<string, string[]> IntentAnchors =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            ["employee"]    = new[] { "karyawan", "pegawai", "staff", "jabatan", "divisi", "shift" },
-            ["overtime"]    = new[] { "lembur", "overtime" },
+            ["employee"] = new[] { "karyawan", "pegawai", "staff", "jabatan", "divisi", "shift" },
+            ["overtime"] = new[] { "lembur", "overtime" },
             ["maintenance"] = new[] { "maintenance", "perawatan", "teknisi", "peralatan", "alat" },
-            ["audit"]       = new[] { "audit", "kepatuhan", "pelanggaran", "anomali", "logbook" },
-            ["sop"]         = new[] { "sop", "aturan", "prosedur", "apd", "keselamatan", "safety",
+            ["audit"] = new[] { "audit", "kepatuhan", "pelanggaran", "anomali", "logbook" },
+            ["sop"] = new[] { "sop", "prosedur", "apd", "keselamatan", "safety",
                                       "briefing", "evakuasi", "kecepatan", "area", "tangki", "akses", "kilang", "gate" },
-            ["profile"]     = new[] { "profil", "perusahaan", "unit", "kapasitas", "produksi", "direktur" },
+            ["profile"] = new[] { "profil", "perusahaan", "unit", "kapasitas", "produksi", "direktur" },
         };
 
     // Guard 2: if the LLM picked a structured/dummy intent but the query carries no

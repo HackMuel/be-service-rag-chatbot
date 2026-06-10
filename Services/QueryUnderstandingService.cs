@@ -31,6 +31,8 @@ public class QueryUnderstandingService
         - status: Tetap | Kontrak.
         - shift: A | B | C.
 
+        Q: "Apa aturan akun Laboratorium Aurora?" → {"intent":"semantic","entities":{},"is_policy":false,"is_access":false}
+        Q: "Apa aturan login Laboratorium Aurora?" → {"intent":"semantic","entities":{},"is_policy":false,"is_access":false}
         Q: "sinta lestari bekerja di divisi apa?" → {"intent":"employee","entities":{"name":"sinta lestari"},"is_policy":false,"is_access":false}
         Q: "siapa yang boleh masuk area tangki?" → {"intent":"sop","entities":{},"is_policy":true,"is_access":true}
         Q: "karyawan shift A divisi IT" → {"intent":"employee","entities":{"division":"IT & Digitalisasi","shift":"A"},"is_policy":false,"is_access":false}
@@ -127,7 +129,7 @@ public class QueryUnderstandingService
     private static LlmQueryResult? ParseLlmResult(string raw)
     {
         var start = raw.IndexOf('{');
-        var end   = raw.LastIndexOf('}');
+        var end = raw.LastIndexOf('}');
         if (start < 0 || end <= start) return null;
 
         try
@@ -143,7 +145,7 @@ public class QueryUnderstandingService
 
             var r = new LlmQueryResult
             {
-                Intent   = intent,
+                Intent = intent,
                 IsPolicy = root.TryGetProperty("is_policy", out var pol) && pol.GetBoolean(),
                 IsAccess = root.TryGetProperty("is_access", out var acc) && acc.GetBoolean()
             };
@@ -151,18 +153,18 @@ public class QueryUnderstandingService
             if (root.TryGetProperty("entities", out var ents) &&
                 ents.ValueKind == JsonValueKind.Object)
             {
-                r.Name       = GetEntityStr(ents, "name");
-                r.Nik        = GetEntityStr(ents, "nik");
-                r.Code       = GetEntityStr(ents, "code");
-                r.Date       = GetEntityStr(ents, "date");
-                r.Division   = GetEntityStr(ents, "division");
-                r.Shift      = GetEntityStr(ents, "shift");
-                r.Status     = GetEntityStr(ents, "status");
-                r.Position   = GetEntityStr(ents, "position");
-                r.Location   = GetEntityStr(ents, "location");
-                r.Approval   = GetEntityStr(ents, "approval");
+                r.Name = GetEntityStr(ents, "name");
+                r.Nik = GetEntityStr(ents, "nik");
+                r.Code = GetEntityStr(ents, "code");
+                r.Date = GetEntityStr(ents, "date");
+                r.Division = GetEntityStr(ents, "division");
+                r.Shift = GetEntityStr(ents, "shift");
+                r.Status = GetEntityStr(ents, "status");
+                r.Position = GetEntityStr(ents, "position");
+                r.Location = GetEntityStr(ents, "location");
+                r.Approval = GetEntityStr(ents, "approval");
                 r.Technician = GetEntityStr(ents, "technician");
-                r.Equipment  = GetEntityStr(ents, "equipment");
+                r.Equipment = GetEntityStr(ents, "equipment");
             }
 
             return r;
@@ -188,30 +190,30 @@ public class QueryUnderstandingService
     {
         var intent = llm.Intent;
 
-        var isEmployee    = intent == "employee";
-        var isOvertime    = intent == "overtime";
+        var isEmployee = intent == "employee";
+        var isOvertime = intent == "overtime";
         var isMaintenance = intent == "maintenance";
-        var isSop         = intent is "sop" or "policy";
-        var isProfile     = intent == "profile";
-        var isAudit       = intent == "audit";
-        var isPolicyQ     = llm.IsPolicy || intent == "policy";
-        var isAccessQ     = llm.IsAccess;
+        var isSop = intent == "sop";
+        var isProfile = intent == "profile";
+        var isAudit = intent == "audit";
+        var isPolicyQ = llm.IsPolicy || intent == "policy";
+        var isAccessQ = llm.IsAccess;
 
-        var nik      = string.IsNullOrWhiteSpace(llm.Nik)  ? "" : ChunkMetadataExtractor.NormalizeNik(llm.Nik);
-        var code     = string.IsNullOrWhiteSpace(llm.Code) ? "" : ChunkMetadataExtractor.NormalizeMaintenanceCode(llm.Code);
+        var nik = string.IsNullOrWhiteSpace(llm.Nik) ? "" : ChunkMetadataExtractor.NormalizeNik(llm.Nik);
+        var code = string.IsNullOrWhiteSpace(llm.Code) ? "" : ChunkMetadataExtractor.NormalizeMaintenanceCode(llm.Code);
         var division = NormalizeDivision(llm.Division);
-        var shift    = NormalizeShift(llm.Shift);
+        var shift = NormalizeShift(llm.Shift);
         var empStatus = NormalizeEmployeeStatus(llm.Status);
         var position = NormalizePosition(llm.Position);
-        var mStatus  = NormalizeMaintenanceStatus(llm.Status);
+        var mStatus = NormalizeMaintenanceStatus(llm.Status);
         var approval = NormalizeApproval(llm.Approval);
         var location = NormalizeLocation(llm.Location);
 
         var personKeyword = llm.Name?.Trim() ?? "";
         var looksLikeName = !string.IsNullOrWhiteSpace(personKeyword);
-        var hasNik        = !string.IsNullOrWhiteSpace(nik);
-        var hasCode       = !string.IsNullOrWhiteSpace(code);
-        var hasDate       = !string.IsNullOrWhiteSpace(llm.Date);
+        var hasNik = !string.IsNullOrWhiteSpace(nik);
+        var hasCode = !string.IsNullOrWhiteSpace(code);
+        var hasDate = !string.IsNullOrWhiteSpace(llm.Date);
 
         var answerLevel = DetermineAnswerLevel(
             intent, hasNik, hasCode, hasDate,
@@ -225,38 +227,38 @@ public class QueryUnderstandingService
 
         return new RagQueryAnalysis
         {
-            Question          = question,
-            AnswerLevel       = answerLevel,
-            Nik               = nik,
-            MaintenanceCode   = code,
-            Date              = llm.Date?.Trim() ?? "",
-            IsSopQuery        = isSop,
-            IsProfileQuery    = isProfile,
-            IsAuditQuery      = isAudit,
-            IsEmployeeQuery   = isEmployee,
-            IsOvertimeQuery   = isOvertime,
+            Question = question,
+            AnswerLevel = answerLevel,
+            Nik = nik,
+            MaintenanceCode = code,
+            Date = llm.Date?.Trim() ?? "",
+            IsSopQuery = isSop,
+            IsProfileQuery = isProfile,
+            IsAuditQuery = isAudit,
+            IsEmployeeQuery = isEmployee,
+            IsOvertimeQuery = isOvertime,
             IsMaintenanceQuery = isMaintenance,
-            SopKeyword        = isSop ? question : "",
-            ProfileKeyword    = isProfile ? question : "",
-            Division          = division,
-            Shift             = shift,
-            EmployeeStatus    = empStatus,
-            Position          = position,
+            SopKeyword = isSop ? question : "",
+            ProfileKeyword = isProfile ? question : "",
+            Division = division,
+            Shift = shift,
+            EmployeeStatus = empStatus,
+            Position = position,
             MaintenanceStatus = mStatus,
-            Approval          = approval,
-            Location          = location,
-            Technician        = llm.Technician?.Trim() ?? "",
-            PersonKeyword     = personKeyword,
-            LooksLikePersonName  = looksLikeName,
-            IsPolicyQuestion     = isPolicyQ,
-            IsAccessQuestion     = isAccessQ,
+            Approval = approval,
+            Location = location,
+            Technician = llm.Technician?.Trim() ?? "",
+            PersonKeyword = personKeyword,
+            LooksLikePersonName = looksLikeName,
+            IsPolicyQuestion = isPolicyQ,
+            IsAccessQuestion = isAccessQ,
             IsPermissionQuestion = isPolicyQ,
-            TargetRecordType  = GetTargetRecordType(intent),
+            TargetRecordType = GetTargetRecordType(intent),
             GenericRecordType = GetGenericRecordType(intent),
             RequiresGroundedLlm = answerLevel is AnswerLevel.PolicyGrounded or AnswerLevel.SemanticGrounded,
-            RequestedFields   = requestedFields,
-            IsBlocked         = fieldValidation.IsBlocked,
-            BlockReason       = fieldValidation.BlockReason
+            RequestedFields = requestedFields,
+            IsBlocked = fieldValidation.IsBlocked,
+            BlockReason = fieldValidation.BlockReason
         };
     }
 
@@ -272,8 +274,8 @@ public class QueryUnderstandingService
 
         if (hasNik || hasCode || hasDate) return AnswerLevel.ExactStructured;
 
-        var hasEmployeeFilter  = isEmployee    && (!string.IsNullOrWhiteSpace(division) || !string.IsNullOrWhiteSpace(shift)    || !string.IsNullOrWhiteSpace(status)    || !string.IsNullOrWhiteSpace(position));
-        var hasOvertimeFilter  = isOvertime    && (!string.IsNullOrWhiteSpace(approval) || !string.IsNullOrWhiteSpace(division) || looksLikeName);
+        var hasEmployeeFilter = isEmployee && (!string.IsNullOrWhiteSpace(division) || !string.IsNullOrWhiteSpace(shift) || !string.IsNullOrWhiteSpace(status) || !string.IsNullOrWhiteSpace(position));
+        var hasOvertimeFilter = isOvertime && (!string.IsNullOrWhiteSpace(approval) || !string.IsNullOrWhiteSpace(division) || looksLikeName);
         var hasMaintenanceFilter = isMaintenance && (!string.IsNullOrWhiteSpace(location) || !string.IsNullOrWhiteSpace(technician));
 
         if (hasEmployeeFilter || hasOvertimeFilter || hasMaintenanceFilter || looksLikeName)
@@ -298,14 +300,14 @@ public class QueryUnderstandingService
     private static string NormalizeDivision(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return "";
-        if (raw.Contains("IT",               StringComparison.OrdinalIgnoreCase) || raw.Contains("digitalisasi",   StringComparison.OrdinalIgnoreCase)) return "IT & Digitalisasi";
+        if (raw.Contains("IT", StringComparison.OrdinalIgnoreCase) || raw.Contains("digitalisasi", StringComparison.OrdinalIgnoreCase)) return "IT & Digitalisasi";
         if (raw.Contains("operasional kilang", StringComparison.OrdinalIgnoreCase)) return "Operasional Kilang";
-        if (raw.Contains("human capital",     StringComparison.OrdinalIgnoreCase)) return "Human Capital";
-        if (raw.Contains("maintenance",       StringComparison.OrdinalIgnoreCase)) return "Maintenance";
-        if (raw.Contains("distribusi",        StringComparison.OrdinalIgnoreCase)) return "Distribusi";
-        if (raw.Contains("keuangan",          StringComparison.OrdinalIgnoreCase)) return "Keuangan";
-        if (raw.Contains("security",          StringComparison.OrdinalIgnoreCase)) return "Security";
-        if (raw.Contains("hsse",              StringComparison.OrdinalIgnoreCase)) return "HSSE";
+        if (raw.Contains("human capital", StringComparison.OrdinalIgnoreCase)) return "Human Capital";
+        if (raw.Contains("maintenance", StringComparison.OrdinalIgnoreCase)) return "Maintenance";
+        if (raw.Contains("distribusi", StringComparison.OrdinalIgnoreCase)) return "Distribusi";
+        if (raw.Contains("keuangan", StringComparison.OrdinalIgnoreCase)) return "Keuangan";
+        if (raw.Contains("security", StringComparison.OrdinalIgnoreCase)) return "Security";
+        if (raw.Contains("hsse", StringComparison.OrdinalIgnoreCase)) return "HSSE";
         return raw.Trim();
     }
 
@@ -320,7 +322,7 @@ public class QueryUnderstandingService
     {
         if (string.IsNullOrWhiteSpace(raw)) return "";
         if (raw.Contains("kontrak", StringComparison.OrdinalIgnoreCase)) return "Kontrak";
-        if (raw.Contains("tetap",   StringComparison.OrdinalIgnoreCase)) return "Tetap";
+        if (raw.Contains("tetap", StringComparison.OrdinalIgnoreCase)) return "Tetap";
         return "";
     }
 
@@ -334,17 +336,17 @@ public class QueryUnderstandingService
     private static string NormalizeMaintenanceStatus(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return "";
-        if (raw.Contains("berkala",    StringComparison.OrdinalIgnoreCase)) return "Maintenance Berkala";
-        if (raw.Contains("perbaikan",  StringComparison.OrdinalIgnoreCase)) return "Perbaikan";
-        if (Regex.IsMatch(raw, @"\bnormal\b", RegexOptions.IgnoreCase))     return "Normal";
+        if (raw.Contains("berkala", StringComparison.OrdinalIgnoreCase)) return "Maintenance Berkala";
+        if (raw.Contains("perbaikan", StringComparison.OrdinalIgnoreCase)) return "Perbaikan";
+        if (Regex.IsMatch(raw, @"\bnormal\b", RegexOptions.IgnoreCase)) return "Normal";
         return "";
     }
 
     private static string NormalizeApproval(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return "";
-        if (raw.Contains("setuju",  StringComparison.OrdinalIgnoreCase)) return "Disetujui";
-        if (raw.Contains("tolak",   StringComparison.OrdinalIgnoreCase)) return "Ditolak";
+        if (raw.Contains("setuju", StringComparison.OrdinalIgnoreCase)) return "Disetujui";
+        if (raw.Contains("tolak", StringComparison.OrdinalIgnoreCase)) return "Ditolak";
         if (raw.Contains("pending", StringComparison.OrdinalIgnoreCase)) return "Pending";
         return "";
     }
@@ -359,18 +361,18 @@ public class QueryUnderstandingService
     private static string GetTargetRecordType(string intent) => intent switch
     {
         "profile" => "profile",
-        "audit"   => "audit",
-        "sop" or "policy" => "sop",
+        "audit" => "audit",
+        "sop" => "sop",
         _ => string.Empty
     };
 
     private static string GetGenericRecordType(string intent) => intent switch
     {
-        "employee"    => "employee",
-        "overtime"    => "overtime",
+        "employee" => "employee",
+        "overtime" => "overtime",
         "maintenance" => "maintenance",
-        "sop"         => "sop",
-        "audit"       => "audit",
+        "sop" => "sop",
+        "audit" => "audit",
         _ => string.Empty
     };
 
@@ -396,20 +398,20 @@ public class QueryUnderstandingService
 
     private sealed class LlmQueryResult
     {
-        public string  Intent     { get; set; } = "";
-        public string? Name       { get; set; }
-        public string? Nik        { get; set; }
-        public string? Code       { get; set; }
-        public string? Date       { get; set; }
-        public string? Division   { get; set; }
-        public string? Shift      { get; set; }
-        public string? Status     { get; set; }
-        public string? Position   { get; set; }
-        public string? Location   { get; set; }
-        public string? Approval   { get; set; }
+        public string Intent { get; set; } = "";
+        public string? Name { get; set; }
+        public string? Nik { get; set; }
+        public string? Code { get; set; }
+        public string? Date { get; set; }
+        public string? Division { get; set; }
+        public string? Shift { get; set; }
+        public string? Status { get; set; }
+        public string? Position { get; set; }
+        public string? Location { get; set; }
+        public string? Approval { get; set; }
         public string? Technician { get; set; }
-        public string? Equipment  { get; set; }
-        public bool    IsPolicy   { get; set; }
-        public bool    IsAccess   { get; set; }
+        public string? Equipment { get; set; }
+        public bool IsPolicy { get; set; }
+        public bool IsAccess { get; set; }
     }
 }
