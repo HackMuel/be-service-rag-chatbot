@@ -45,6 +45,15 @@ builder.Services.Configure<RetrievalOptions>(
     builder.Configuration.GetSection("Retrieval"));
 builder.Services.Configure<RagModeOptions>(
     builder.Configuration.GetSection("Rag"));
+builder.Services.Configure<DatasetSchemaOptions>(
+    builder.Configuration.GetSection("DatasetSchema"));
+// Fall back to the built-in dummy schema when appsettings provides none, so
+// ingestion behaves identically on a fresh checkout.
+builder.Services.PostConfigure<DatasetSchemaOptions>(options =>
+{
+    if (options.RecordTypes.Count == 0)
+        options.RecordTypes = DatasetSchemaOptions.Default().RecordTypes;
+});
 builder.Services.AddScoped<ObjectStorageService>();
 builder.Services.AddScoped<RetrievalService>();
 builder.Services.AddScoped<PdfTextExtractor>();

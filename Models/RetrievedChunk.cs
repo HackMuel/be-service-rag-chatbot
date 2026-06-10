@@ -29,4 +29,9 @@ public class RetrievedChunk
     // Additive — flat/legacy payload fields are unaffected.
     public string ChunkType { get; set; } = string.Empty;
     public int? ChunkIndex { get; set; }
+
+    // Flat dataset payload fields for this chunk's recordType, produced by the
+    // schema-driven extractor at ingest time. Written to Qdrant as-is so a chunk
+    // only carries fields that belong to its recordType (no empty cross-type slots).
+    public Dictionary<string, string> DatasetFields { get; set; } = new();
 }

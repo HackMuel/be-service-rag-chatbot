@@ -12,16 +12,31 @@ public class ChunkingService
     // Minimum chars before a break is considered valid — prevents tiny fragments.
     private const int MinChunkLength = 300;
 
-    // Dummy dataset section headers. Accepts one or more leading newlines so it
-    // works whether the headers are separated by a single line break (coordinate-
-    // based PDF extraction) or a blank line (legacy flattened extraction).
-    private const string DummySectionPattern =
-        @"(?=\n+[ \t]*(?:1\. Profil Perusahaan|2\. Data Karyawan Internal|3\. SOP Keamanan Area Kilang|4\. Rekap Lembur Karyawan|5\. Log Maintenance Peralatan|6\. Catatan Audit dan Keamanan))";
+    private readonly DatasetSchemaOptions _schema;
 
-    public ChunkingService(IOptions<RetrievalOptions> retrievalOptions)
+    // Top-level section split built from the schema's section headers. Tolerant of
+    // a leading "N. " number prefix and single/double newlines (so it works for
+    // both coordinate-based and legacy flattened PDF extraction). Null when the
+    // schema defines no headers — then the whole document is one generic section.
+    private readonly string? _sectionSplitPattern;
+    private readonly string? _profileHeader;
+
+    public ChunkingService(
+        IOptions<RetrievalOptions> retrievalOptions,
+        IOptions<DatasetSchemaOptions> datasetSchema)
     {
         _maxLength = retrievalOptions.Value.GenericChunkMaxLength;
         _overlap   = retrievalOptions.Value.GenericChunkOverlap;
+        _schema    = datasetSchema.Value;
+
+        var headers = string.Join(
+            "|",
+            _schema.SectionHeaders.Select(h => @"\d+\.\s*" + Regex.Escape(h)));
+        _sectionSplitPattern = string.IsNullOrEmpty(headers)
+            ? null
+            : $@"(?=\n+[ \t]*(?:{headers}))";
+
+        _profileHeader = _schema.Find("profile")?.SectionHeader;
     }
 
     // Primary entry: produces typed chunks (content + chunkType + sectionTitle).
@@ -29,35 +44,38 @@ public class ChunkingService
     // aware section splitting; oversized chunks → size-bounded fallback.
     public List<ContentChunk> Chunk(string text)
     {
-        var sections = Regex
-            .Split(text, DummySectionPattern)
-            .Select(x => x.Trim())
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .ToList();
+        var sections = _sectionSplitPattern is null
+            ? new List<string> { text.Trim() }
+            : Regex
+                .Split(text, _sectionSplitPattern)
+                .Select(x => x.Trim())
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .ToList();
 
         var pieces = new List<ContentChunk>();
 
         foreach (var section in sections)
         {
-            if (section.Contains("Data Karyawan:", StringComparison.OrdinalIgnoreCase))
+            // A recordType "owns" the section when its record delimiter appears in it.
+            var structured = _schema.RecordTypes.FirstOrDefault(rt =>
+                !string.IsNullOrWhiteSpace(rt.RecordDelimiter) &&
+                Regex.IsMatch(section, rt.RecordDelimiter));
+
+            if (structured is not null)
             {
+                // Derive the row marker + section title from the delimiter:
+                // "Data Karyawan:\s*NIK:" → marker "Data Karyawan:", title "Data Karyawan".
+                var marker = structured.RecordDelimiter!.Split(new[] { @"\s*" }, StringSplitOptions.None)[0];
+                var sectionTitle = marker.TrimEnd(':', ' ');
                 pieces.AddRange(SplitStructuredRows(
-                    section, @"(?=Data Karyawan:\s*NIK:)", "Data Karyawan:", "Data Karyawan"));
+                    section, "(?=" + structured.RecordDelimiter + ")", marker, sectionTitle));
             }
-            else if (section.Contains("Rekap Lembur:", StringComparison.OrdinalIgnoreCase))
+            else if (!string.IsNullOrWhiteSpace(_profileHeader) &&
+                     section.Contains(_profileHeader, StringComparison.OrdinalIgnoreCase))
             {
-                pieces.AddRange(SplitStructuredRows(
-                    section, @"(?=Rekap Lembur:\s*Tanggal:)", "Rekap Lembur:", "Rekap Lembur"));
-            }
-            else if (section.Contains("Log Maintenance:", StringComparison.OrdinalIgnoreCase))
-            {
-                pieces.AddRange(SplitStructuredRows(
-                    section, @"(?=Log Maintenance:\s*Kode:)", "Log Maintenance:", "Log Maintenance"));
-            }
-            else if (section.Contains("Profil Perusahaan", StringComparison.OrdinalIgnoreCase))
-            {
+                // Profile uses the special Field/Value pairing splitter (exception).
                 foreach (var fact in SplitProfileSection(section))
-                    pieces.Add(new ContentChunk(fact, "structured_fact", "Profil Perusahaan"));
+                    pieces.Add(new ContentChunk(fact, "structured_fact", _profileHeader));
             }
             else
             {

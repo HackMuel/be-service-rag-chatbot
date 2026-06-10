@@ -149,34 +149,34 @@ public class QdrantPointWriter
         return new { dense };
     }
 
-    private static object BuildPayload(RetrievedChunk chunk)
+    // Two-layer payload: system fields (always) + the recordType's dataset fields
+    // (flat, only the fields that belong to this chunk's recordType). nameNormalized
+    // is derived from the dataset "name" field when present.
+    private static Dictionary<string, object> BuildPayload(RetrievedChunk chunk)
     {
-        return new
+        var payload = new Dictionary<string, object>
         {
-            documentId = chunk.DocumentId.ToString(),
-            documentTitle = chunk.DocumentTitle,
-            content = chunk.Content,
-            recordType = chunk.RecordType,
-            nik = chunk.Nik,
-            name = chunk.Name,
-            nameNormalized = NormalizeKeyword(chunk.Name),
-            maintenanceCode = chunk.MaintenanceCode,
-            date = chunk.Date,
-            division = chunk.Division,
-            department = chunk.Department,
-            position = chunk.Position,
-            shift = chunk.Shift,
-            employeeStatus = chunk.EmployeeStatus,
-            duration = chunk.Duration,
-            approval = chunk.Approval,
-            equipment = chunk.Equipment,
-            location = chunk.Location,
-            maintenanceStatus = chunk.MaintenanceStatus,
-            technician = chunk.Technician,
-            sectionTitle = chunk.SectionTitle,
-            chunkType = chunk.ChunkType,
-            chunkIndex = chunk.ChunkIndex ?? -1
+            ["documentId"] = chunk.DocumentId.ToString(),
+            ["documentTitle"] = chunk.DocumentTitle,
+            ["content"] = chunk.Content,
+            ["recordType"] = chunk.RecordType,
+            ["department"] = chunk.Department,
+            ["sectionTitle"] = chunk.SectionTitle,
+            ["chunkType"] = chunk.ChunkType,
+            ["chunkIndex"] = chunk.ChunkIndex ?? -1,
+            ["ingestedAt"] = DateTime.UtcNow.ToString("o")
         };
+
+        foreach (var field in chunk.DatasetFields)
+            payload[field.Key] = field.Value;
+
+        if (chunk.DatasetFields.TryGetValue("name", out var name) &&
+            !string.IsNullOrWhiteSpace(name))
+        {
+            payload["nameNormalized"] = NormalizeKeyword(name);
+        }
+
+        return payload;
     }
 
     private static string NormalizeKeyword(string value)

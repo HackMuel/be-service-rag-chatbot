@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using be_service.Models;
 
 namespace be_service.Services;
 
@@ -211,6 +212,30 @@ public static class ChunkMetadataExtractor
         // Generic documents: if the chunk starts with a recognizable heading
         // (SECTION N - ..., N.N ..., BAB ...), use it as the section title.
         return TryExtractGenericHeading(content);
+    }
+
+    // Schema-driven extraction: one loop over a recordType's fields, reusing the
+    // existing ExtractByLabel / ExtractByPattern engines. Returns flat key→value
+    // for every field in the schema (empty string when not found), so the payload
+    // writer can persist exactly this recordType's fields.
+    public static Dictionary<string, string> ExtractFields(
+        string content,
+        IEnumerable<DatasetField> fields)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var field in fields)
+        {
+            var value = !string.IsNullOrWhiteSpace(field.Pattern)
+                ? ExtractByPattern(content, field.Pattern)
+                : !string.IsNullOrWhiteSpace(field.Label)
+                    ? ExtractByLabel(content, field.Label)
+                    : "";
+
+            result[field.Key] = value;
+        }
+
+        return result;
     }
 
     private static string ExtractByLabel(string content, string label)
