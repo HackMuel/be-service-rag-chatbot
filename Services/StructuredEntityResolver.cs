@@ -102,6 +102,23 @@ public class StructuredEntityResolver
         _cacheExpiresAt = DateTimeOffset.MinValue;
     }
 
+    // NEW: grounding-gate helper. Returns true only if (fieldName, value) actually
+    // exists in the live Qdrant corpus. Used by the planner to abstain from a
+    // structured route when an LLM-extracted slot is not real — dataset-agnostic
+    // (compares against harvested corpus values, no hardcoded vocabulary).
+    public async Task<bool> IsKnownValueAsync(string fieldName, string value)
+    {
+        if (string.IsNullOrWhiteSpace(fieldName) || string.IsNullOrWhiteSpace(value))
+            return false;
+
+        var trimmed = value.Trim();
+        var known = await GetKnownEntitiesAsync();
+
+        return known.Any(e =>
+            e.FieldName.Equals(fieldName, StringComparison.OrdinalIgnoreCase) &&
+            e.Value.Trim().Equals(trimmed, StringComparison.OrdinalIgnoreCase));
+    }
+
     private async Task<List<StructuredEntityMatch>> GetKnownEntitiesAsync()
     {
         var now = DateTimeOffset.UtcNow;

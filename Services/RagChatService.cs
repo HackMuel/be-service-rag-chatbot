@@ -12,6 +12,8 @@ public class RagChatService
     private readonly AnswerFormatterService _answerFormatterService;
     private readonly PromptBuilderService _promptBuilderService;
     private readonly RetrievalService _retrievalService;
+    // NEW: resolver injected for the grounded abstention gate (Option A).
+    private readonly StructuredEntityResolver _structuredEntityResolver;
     private readonly RagModeOptions _ragMode;
 
     public RagChatService(
@@ -22,6 +24,7 @@ public class RagChatService
         AnswerFormatterService answerFormatterService,
         PromptBuilderService promptBuilderService,
         RetrievalService retrievalService,
+        StructuredEntityResolver structuredEntityResolver, // NEW: corpus grounding for the gate
         IOptions<RagModeOptions> ragMode)
     {
         _ollamaService = ollamaService;
@@ -31,6 +34,7 @@ public class RagChatService
         _answerFormatterService = answerFormatterService;
         _promptBuilderService = promptBuilderService;
         _retrievalService = retrievalService;
+        _structuredEntityResolver = structuredEntityResolver; // NEW
         _ragMode = ragMode.Value;
     }
 
@@ -45,10 +49,26 @@ public class RagChatService
         RagQueryAnalysis analysis;
         if (_ragMode.IsSemanticQueryMode)
         {
-            analysis = await _queryUnderstandingService.AnalyzeAsync(question);
-            LogFallbackUsage(analysis);
-            if (_ragMode.ShadowCompare)
-                await ShadowCompareLegacyAsync(analysis);
+            // NEW: deterministic fast-path BEFORE the LLM. Hard identifiers and
+            // real person-name lookups are answered by the keyword analyzer in ~ms
+            // and correctly; calling the LLM for "siapa <nama>" is both slow (2-5s)
+            // and unreliable (it mislabels them as profile/policy). Only falls
+            // through to the LLM when the query is genuinely ambiguous/natural.
+            var fastPath = await TryFastStructuralAsync(question);
+            if (fastPath is not null)
+            {
+                analysis = fastPath;
+            }
+            else
+            {
+                analysis = await _queryUnderstandingService.AnalyzeAsync(question);
+                LogFallbackUsage(analysis);
+                if (_ragMode.ShadowCompare)
+                    await ShadowCompareLegacyAsync(analysis);
+                // NEW: grounded abstention gate — don't trust an LLM structured route
+                // whose slots don't exist in the corpus; abstain to hybrid instead.
+                await ApplyGroundingGateAsync(analysis);
+            }
         }
         else
         {
@@ -81,6 +101,110 @@ public class RagChatService
             "QUS_SOURCE source={Source}, fellBack={FellBack}",
             analysis.AnalysisSource,
             fellBack);
+    }
+
+    // NEW: deterministic fast-path for high-precision structured queries — returns
+    // a ready analysis (skipping the LLM) for hard identifiers (NIK/MT/date) and
+    // person-name lookups whose name actually exists in the corpus; returns null
+    // when the query should go to the LLM. The name check is grounded against real
+    // corpus names so it does NOT hijack generic questions that merely look
+    // name-shaped (e.g. "siapa supervisor di perusahaan ini").
+    private async Task<RagQueryAnalysis?> TryFastStructuralAsync(string question)
+    {
+        // Keyword analyzer is ~1ms and deterministic — cheap enough to probe first.
+        var ka = await _queryAnalyzerService.AnalyzeAsync(question);
+
+        var hasHardIdentifier =
+            !string.IsNullOrWhiteSpace(ka.Nik) ||
+            !string.IsNullOrWhiteSpace(ka.MaintenanceCode) ||
+            !string.IsNullOrWhiteSpace(ka.Date);
+
+        if (hasHardIdentifier)
+        {
+            ka.AnalysisSource = "fast-path"; // mark provenance for logs/metrics
+            _logger.LogInformation("QUS_FASTPATH reason=identifier");
+            return ka;
+        }
+
+        // Person-name lookup, but only when the name is real in the corpus.
+        if (ka.LooksLikePersonName &&
+            !string.IsNullOrWhiteSpace(ka.PersonKeyword) &&
+            await _structuredEntityResolver.IsKnownValueAsync("name", ka.PersonKeyword))
+        {
+            ka.AnalysisSource = "fast-path";
+            _logger.LogInformation("QUS_FASTPATH reason=known-name name={Name}", ka.PersonKeyword);
+            return ka;
+        }
+
+        return null;
+    }
+
+    // NEW: grounded abstention gate (Option A). Prevents the planner from blindly
+    // trusting an LLM-predicted structured route. If the extracted categorical
+    // slots don't exist in the live Qdrant corpus AND there is no hard identifier,
+    // downgrade AnswerLevel to SemanticGrounded so the query goes to hybrid vector
+    // search instead of an empty/dummy-biased structured filter. Grounded against
+    // real corpus values → dataset-agnostic, no hardcoded vocabulary.
+    private async Task ApplyGroundingGateAsync(RagQueryAnalysis analysis)
+    {
+        // Blocked queries never reach retrieval — skip the corpus lookup.
+        if (analysis.IsBlocked)
+            return;
+
+        // Hard identifiers (NIK / MT code / date) are exact — always trust them.
+        var hasHardIdentifier =
+            !string.IsNullOrWhiteSpace(analysis.Nik) ||
+            !string.IsNullOrWhiteSpace(analysis.MaintenanceCode) ||
+            !string.IsNullOrWhiteSpace(analysis.Date);
+        if (hasHardIdentifier)
+            return;
+
+        // Only entity-filtered structured intents are gated. sop/audit/profile,
+        // semantic, and name-only routes are left untouched.
+        var isEntityFilteredStructured =
+            (analysis.IsEmployeeQuery || analysis.IsOvertimeQuery || analysis.IsMaintenanceQuery) &&
+            analysis.AnswerLevel == AnswerLevel.ExactStructured;
+        if (!isEntityFilteredStructured)
+            return;
+
+        // Collect filled categorical slots (open-ended person name is excluded —
+        // an unknown name legitimately means "not found", not a domain mismatch).
+        var slots = new List<(string Field, string Value)>();
+        void AddSlot(string field, string value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+                slots.Add((field, value));
+        }
+        AddSlot("division", analysis.Division);
+        AddSlot("shift", analysis.Shift);
+        AddSlot("employeeStatus", analysis.EmployeeStatus);
+        AddSlot("position", analysis.Position);
+        AddSlot("approval", analysis.Approval);
+        AddSlot("location", analysis.Location);
+        AddSlot("maintenanceStatus", analysis.MaintenanceStatus);
+        AddSlot("technician", analysis.Technician);
+        // NOTE: equipment not gated — RagQueryAnalysis has no Equipment slot yet
+        // (LLM equipment entity is currently dropped; revisit in Option B).
+
+        // No categorical slot to verify (e.g. "list semua karyawan") → leave as is;
+        // an empty structured result still falls through to vector search downstream.
+        if (slots.Count == 0)
+            return;
+
+        // Keep the structured route if ANY slot resolves to a real corpus value.
+        foreach (var (field, value) in slots)
+        {
+            if (await _structuredEntityResolver.IsKnownValueAsync(field, value))
+                return;
+        }
+
+        // None resolved → the LLM invented a structured route the corpus can't
+        // serve → abstain to hybrid vector search.
+        _logger.LogInformation(
+            "GROUNDING_GATE downgrade=ExactStructured->SemanticGrounded, unresolvedSlots={Slots}",
+            string.Join(",", slots.Select(s => $"{s.Field}={s.Value}")));
+
+        analysis.AnswerLevel = AnswerLevel.SemanticGrounded;
     }
 
     // Runs the legacy keyword analyzer alongside the LLM analyzer and logs how
