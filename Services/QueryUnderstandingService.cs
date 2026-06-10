@@ -26,7 +26,7 @@ public class QueryUnderstandingService
         - Pertanyaan tentang angka/persentase/tingkat kepatuhan/hasil audit → intent=audit. Contoh: "berapa persen kepatuhan", "tingkat kepatuhan APD".
 
         NILAI VALID (petakan bahasa informal ke nilai eksak ini):
-        - position: Supervisor | Operator | Manager | Coordinator | Analyst | Engineer | Staff. Contoh: "siapa supervisor" → position="Supervisor".
+        - position: Supervisor | Operator | Manager | Coordinator | Analyst | Engineer | Staff. Contoh: "siapa supervisor" → position="Supervisor"; sinonim "mandor"/"kepala regu"/"atasan" → position="Supervisor".
         - approval: Disetujui | Ditolak | Pending. Contoh: "sudah disetujui"/"yang di-approve" → approval="Disetujui"; "ditolak" → "Ditolak"; "belum diproses"/"menunggu" → "Pending".
         - status: Tetap | Kontrak.
         - shift: A | B | C.
@@ -35,6 +35,9 @@ public class QueryUnderstandingService
         Q: "siapa yang boleh masuk area tangki?" → {"intent":"sop","entities":{},"is_policy":true,"is_access":true}
         Q: "karyawan shift A divisi IT" → {"intent":"employee","entities":{"division":"IT & Digitalisasi","shift":"A"},"is_policy":false,"is_access":false}
         Q: "siapa supervisor di perusahaan ini?" → {"intent":"employee","entities":{"position":"Supervisor"},"is_policy":false,"is_access":false}
+        Q: "ada mandor ga di sini?" → {"intent":"employee","entities":{"position":"Supervisor"},"is_policy":false,"is_access":false}
+        Q: "jelaskan tentang perusahaan ini" → {"intent":"profile","entities":{},"is_policy":false,"is_access":false}
+        Q: "siapa teknisi generator?" → {"intent":"maintenance","entities":{"equipment":"Generator"},"is_policy":false,"is_access":false}
         Q: "rekap lembur yang sudah disetujui" → {"intent":"overtime","entities":{"approval":"Disetujui"},"is_policy":false,"is_access":false}
         Q: "rekap lembur yang ditolak" → {"intent":"overtime","entities":{"approval":"Ditolak"},"is_policy":false,"is_access":false}
         Q: "apa aturan APD di area produksi?" → {"intent":"sop","entities":{},"is_policy":false,"is_access":false}
@@ -67,14 +70,14 @@ public class QueryUnderstandingService
 
         try
         {
-            var raw = await _ollamaService.CompleteAsync(SystemPrompt, question, temperature: 0);
+            var raw = await _ollamaService.CompleteAsync(SystemPrompt, question, temperature: 0, format: "json");
             var llmResult = ParseLlmResult(raw);
 
             // One retry on unparseable output before falling back to the keyword analyzer.
             if (llmResult is null)
             {
                 _logger.LogInformation("QUS_RETRY length={Length}, JSON unparseable, retrying", question.Length);
-                raw = await _ollamaService.CompleteAsync(SystemPrompt, question, temperature: 0);
+                raw = await _ollamaService.CompleteAsync(SystemPrompt, question, temperature: 0, format: "json");
                 llmResult = ParseLlmResult(raw);
             }
 

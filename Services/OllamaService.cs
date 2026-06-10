@@ -102,30 +102,27 @@ public class OllamaService
     public async Task<string> CompleteAsync(
         string systemPrompt,
         string userMessage,
-        double? temperature = null)
+        double? temperature = null,
+        string? format = null)
     {
-        object request = temperature is null
-            ? new
+        var request = new Dictionary<string, object>
+        {
+            ["model"] = ChatModel,
+            ["messages"] = new[]
             {
-                model = ChatModel,
-                messages = new[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user",   content = userMessage  }
-                },
-                stream = false
-            }
-            : new
-            {
-                model = ChatModel,
-                messages = new[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user",   content = userMessage  }
-                },
-                stream = false,
-                options = new { temperature = temperature.Value }
-            };
+                new { role = "system", content = systemPrompt },
+                new { role = "user",   content = userMessage  }
+            },
+            ["stream"] = false
+        };
+
+        if (temperature is not null)
+            request["options"] = new { temperature = temperature.Value };
+
+        // format="json" makes Ollama constrain output to valid JSON, eliminating
+        // the markdown/prose wrapping that causes parse failures with small models.
+        if (!string.IsNullOrWhiteSpace(format))
+            request["format"] = format;
 
         var response = await HttpResponseGuard.SendAsync(
             () => _httpClient.PostAsync(
