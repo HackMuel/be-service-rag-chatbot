@@ -174,6 +174,35 @@ generic record type employee/overtime/maintenance ke `ExactStructured`.
 | `rekap lembur semua karyawan` | `overtime_general` | ✅ 30 record |
 | `semua log maintenance` | `maintenance_general` | ✅ 24 record |
 
+---
+
+## Robustness #1/#2: JSON-forced output + prompt sinonim (2026-06-08)
+
+Probe 15 query sulit (sinonim/informal/parafrase) menemukan kegagalan nyata BUKAN
+karena nilai hardcoded, tapi: (a) LLM gagal emit JSON valid (parse-fail), (b) slot/intent
+tak terekstrak untuk sinonim. Perbaikan (hanya QueryUnderstandingService + OllamaService):
+
+- **`format: "json"` pada panggilan Ollama understanding** → output dijamin JSON valid.
+- Prompt: sinonim `mandor`→position=Supervisor; contoh `jelaskan perusahaan`→profile,
+  `teknisi generator`→maintenance+equipment.
+
+**Hasil:**
+
+| Query | Sebelum | Sesudah |
+|-------|---------|---------|
+| `ada mandor ga di sini` | ❌ intent=semantic → kosong | ✅ employee_by_position, 2 karyawan |
+| `jelaskan tentang perusahaan ini` | ❌ parse-fail → kosong | ✅ profile, 5 chunks |
+| `siapa teknisi generator` | ❌ parse-fail → kosong | ⚠️ intent+equipment benar, tapi jatuh ke `maintenance_general` (belum ada retrieval by-equipment) |
+
+**Parse-fail: 3/17 → 0/17** pada BASELINE penuh. D3/E2/F1 yang dulu bersandar fallback
+kini ditangani LLM langsung. Tidak ada regresi pada B/D/E (semua benar).
+
+**Belum tertangani (di luar #1/#2):**
+- Retrieval by-equipment / by-code untuk "teknisi <alat>" (P15, C3) → butuh cabang retrieval baru (struktural).
+- `boleh ga orang IT masuk tangki` (P9): analisis benar (PolicyGrounded) tapi jawaban
+  ketimpa template SOP generik → lapisan jawaban (AnswerFormatterService).
+- Field-projection (C1: "divisi sinta" → dump semua field) → lapisan jawaban.
+
 ----------------------------------------------------------------------------- |
 
 POST /api/chat
