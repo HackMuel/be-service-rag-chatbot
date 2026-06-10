@@ -24,5 +24,9 @@ public class RetrievedChunk
     public string MaintenanceStatus { get; set; } = string.Empty;
     public string Technician { get; set; } = string.Empty;
     public string SectionTitle { get; set; } = string.Empty;
+    // Provenance of the chunk produced during ingestion:
+    // structured_row | structured_fact | narrative_section | narrative_chunk.
+    // Additive — flat/legacy payload fields are unaffected.
+    public string ChunkType { get; set; } = string.Empty;
     public int? ChunkIndex { get; set; }
 }

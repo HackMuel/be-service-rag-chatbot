@@ -185,6 +185,7 @@ public class QdrantSearchClient
             MaintenanceStatus = GetStr(point, "maintenanceStatus"),
             Technician     = GetStr(point, "technician"),
             SectionTitle   = GetStr(point, "sectionTitle"),
+            ChunkType      = GetStr(point, "chunkType"),
             ChunkIndex     = GetInt(point, "chunkIndex")
         };
     }

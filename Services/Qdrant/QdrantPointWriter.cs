@@ -54,6 +54,7 @@ public class QdrantPointWriter
             MaintenanceStatus = ChunkMetadataExtractor.ExtractMaintenanceStatus(content),
             Technician = ChunkMetadataExtractor.ExtractTechnician(content),
             SectionTitle = ChunkMetadataExtractor.ExtractSectionTitle(content),
+            ChunkType = ChunkMetadataExtractor.DetectChunkType(content),
             ChunkIndex = chunkIndex
         };
 
@@ -173,6 +174,7 @@ public class QdrantPointWriter
             maintenanceStatus = chunk.MaintenanceStatus,
             technician = chunk.Technician,
             sectionTitle = chunk.SectionTitle,
+            chunkType = chunk.ChunkType,
             chunkIndex = chunk.ChunkIndex ?? -1
         };
     }

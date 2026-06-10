@@ -38,6 +38,7 @@ public static class RetrievedChunkMapper
             MaintenanceStatus = GetPayloadString(payload, "maintenanceStatus"),
             Technician = GetPayloadString(payload, "technician"),
             SectionTitle = GetPayloadString(payload, "sectionTitle"),
+            ChunkType = GetPayloadString(payload, "chunkType"),
             ChunkIndex = GetPayloadInt(payload, "chunkIndex")
         };
     }

@@ -12,83 +12,156 @@ public class ChunkingService
     // Minimum chars before a break is considered valid — prevents tiny fragments.
     private const int MinChunkLength = 300;
 
+    // Dummy dataset section headers. Accepts one or more leading newlines so it
+    // works whether the headers are separated by a single line break (coordinate-
+    // based PDF extraction) or a blank line (legacy flattened extraction).
+    private const string DummySectionPattern =
+        @"(?=\n+[ \t]*(?:1\. Profil Perusahaan|2\. Data Karyawan Internal|3\. SOP Keamanan Area Kilang|4\. Rekap Lembur Karyawan|5\. Log Maintenance Peralatan|6\. Catatan Audit dan Keamanan))";
+
     public ChunkingService(IOptions<RetrievalOptions> retrievalOptions)
     {
         _maxLength = retrievalOptions.Value.GenericChunkMaxLength;
         _overlap   = retrievalOptions.Value.GenericChunkOverlap;
     }
 
-    public List<string> SplitBySections(string text)
+    // Primary entry: produces typed chunks (content + chunkType + sectionTitle).
+    // Dummy dataset → legacy per-record splitting; generic documents → heading-
+    // aware section splitting; oversized chunks → size-bounded fallback.
+    public List<ContentChunk> Chunk(string text)
     {
-        var pattern = @"(?=\n\n(?:1\. Profil Perusahaan|2\. Data Karyawan Internal|3\. SOP Keamanan Area Kilang|4\. Rekap Lembur Karyawan|5\. Log Maintenance Peralatan|6\. Catatan Audit dan Keamanan))";
-
         var sections = Regex
-            .Split(text, pattern)
+            .Split(text, DummySectionPattern)
             .Select(x => x.Trim())
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .ToList();
 
-        var chunks = new List<string>();
+        var pieces = new List<ContentChunk>();
 
         foreach (var section in sections)
         {
-            if (section.Contains("Profil Perusahaan", StringComparison.OrdinalIgnoreCase))
+            if (section.Contains("Data Karyawan:", StringComparison.OrdinalIgnoreCase))
             {
-                chunks.AddRange(SplitProfileSection(section));
-            }
-            else if (section.Contains("Data Karyawan:", StringComparison.OrdinalIgnoreCase))
-            {
-                var employeeChunks = Regex
-                    .Split(section, @"(?=Data Karyawan:\s*NIK:)")
-                    .Select(x => x.Trim())
-                    .Where(x => x.StartsWith("Data Karyawan:"))
-                    .ToList();
-
-                chunks.AddRange(employeeChunks);
+                pieces.AddRange(SplitStructuredRows(
+                    section, @"(?=Data Karyawan:\s*NIK:)", "Data Karyawan:", "Data Karyawan"));
             }
             else if (section.Contains("Rekap Lembur:", StringComparison.OrdinalIgnoreCase))
             {
-                var overtimeChunks = Regex
-                    .Split(section, @"(?=Rekap Lembur:\s*Tanggal:)")
-                    .Select(x => x.Trim())
-                    .Where(x => x.StartsWith("Rekap Lembur:"))
-                    .ToList();
-
-                chunks.AddRange(overtimeChunks);
+                pieces.AddRange(SplitStructuredRows(
+                    section, @"(?=Rekap Lembur:\s*Tanggal:)", "Rekap Lembur:", "Rekap Lembur"));
             }
             else if (section.Contains("Log Maintenance:", StringComparison.OrdinalIgnoreCase))
             {
-                var maintenanceChunks = Regex
-                    .Split(section, @"(?=Log Maintenance:\s*Kode:)")
-                    .Select(x => x.Trim())
-                    .Where(x => x.StartsWith("Log Maintenance:"))
-                    .ToList();
-
-                chunks.AddRange(maintenanceChunks);
+                pieces.AddRange(SplitStructuredRows(
+                    section, @"(?=Log Maintenance:\s*Kode:)", "Log Maintenance:", "Log Maintenance"));
+            }
+            else if (section.Contains("Profil Perusahaan", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var fact in SplitProfileSection(section))
+                    pieces.Add(new ContentChunk(fact, "structured_fact", "Profil Perusahaan"));
             }
             else
             {
-                chunks.Add(section);
+                // Generic / dummy SOP & audit narrative sections.
+                pieces.AddRange(SplitGenericSections(section));
             }
         }
 
-        // Final pass: any chunk exceeding _maxLength is split further.
-        // This handles generic documents that produce no section matches above,
-        // preventing Ollama embedding from rejecting oversized input.
-        var finalChunks = new List<string>(chunks.Count);
-        foreach (var chunk in chunks)
+        // Final pass: any chunk exceeding _maxLength is split further (handles
+        // generic documents that produce large blocks and prevents Ollama from
+        // rejecting oversized embedding input). sectionTitle is preserved; the
+        // size-split fragments are tagged narrative_chunk.
+        var finalChunks = new List<ContentChunk>(pieces.Count);
+        foreach (var piece in pieces)
         {
-            if (chunk.Length > _maxLength)
-                finalChunks.AddRange(SplitBySize(chunk));
+            if (piece.Content.Length > _maxLength)
+            {
+                foreach (var sub in SplitBySize(piece.Content))
+                    finalChunks.Add(new ContentChunk(sub, "narrative_chunk", piece.SectionTitle));
+            }
             else
-                finalChunks.Add(chunk);
+            {
+                finalChunks.Add(piece);
+            }
         }
 
         return finalChunks;
     }
 
+    // Backward-compatible: returns chunk contents only. Old dummy behavior is
+    // preserved (delegates to Chunk, which contains the same splitting logic).
+    public List<string> SplitBySections(string text)
+    {
+        return Chunk(text).Select(c => c.Content).ToList();
+    }
+
+    private static List<ContentChunk> SplitStructuredRows(
+        string section,
+        string splitPattern,
+        string rowPrefix,
+        string sectionTitle)
+    {
+        return Regex
+            .Split(section, splitPattern)
+            .Select(x => x.Trim())
+            .Where(x => x.StartsWith(rowPrefix, StringComparison.OrdinalIgnoreCase))
+            .Select(row => new ContentChunk(row, "structured_row", sectionTitle))
+            .ToList();
+    }
+
+    // Splits a generic section into one chunk per heading-delimited block.
+    // Recognized headings (SECTION N - ..., N.N ..., BAB ...) become sectionTitle.
+    // If no heading is found, the whole section is a single narrative_section.
+    private List<ContentChunk> SplitGenericSections(string section)
+    {
+        var matches = ChunkMetadataExtractor.GenericHeadingRegex.Matches(section);
+
+        if (matches.Count == 0)
+        {
+            return new List<ContentChunk>
+            {
+                new ContentChunk(
+                    section,
+                    "narrative_section",
+                    ChunkMetadataExtractor.ExtractSectionTitle(section))
+            };
+        }
+
+        var result = new List<ContentChunk>();
+
+        // Text before the first heading (intro/preface).
+        var firstIdx = matches[0].Index;
+        if (firstIdx > 0)
+        {
+            var preface = section[..firstIdx].Trim();
+            if (!string.IsNullOrWhiteSpace(preface))
+            {
+                result.Add(new ContentChunk(
+                    preface,
+                    "narrative_section",
+                    ChunkMetadataExtractor.ExtractSectionTitle(preface)));
+            }
+        }
+
+        for (int i = 0; i < matches.Count; i++)
+        {
+            var start = matches[i].Index;
+            var end = (i + 1 < matches.Count) ? matches[i + 1].Index : section.Length;
+
+            var block = section[start..end].Trim();
+            if (string.IsNullOrWhiteSpace(block))
+                continue;
+
+            var heading = Regex.Replace(matches[i].Value.Trim(), @"\s+", " ");
+            result.Add(new ContentChunk(block, "narrative_section", heading));
+        }
+
+        return result;
+    }
+
     // Splits text into overlapping chunks bounded by _maxLength.
     // Break priority: paragraph boundary (\n\n) → sentence boundary → word boundary → hard cut.
+    // The next window start is snapped forward to a word boundary so no chunk
+    // ever begins in the middle of a word.
     public List<string> SplitBySize(string text)
     {
         var chunks = new List<string>();
@@ -110,9 +183,16 @@ public class ChunkingService
             if (end >= text.Length)
                 break;
 
-            // Advance at least MinChunkLength to prevent near-infinite loops on
-            // text with no suitable break point near the window boundary.
-            start = Math.Max(start + MinChunkLength, end - _overlap);
+            // Advance into the overlap region, then snap forward to a word start
+            // so the next chunk does not begin mid-word.
+            int nextStart = Math.Max(start + MinChunkLength, end - _overlap);
+            nextStart = SnapToWordStart(text, nextStart);
+
+            // Guarantee forward progress (avoids near-infinite loops).
+            if (nextStart <= start)
+                nextStart = end;
+
+            start = nextStart;
         }
 
         return chunks;
@@ -146,6 +226,28 @@ public class ChunkingService
             return spaceBreak + 1;
 
         return end; // hard cut — no suitable boundary found in window
+    }
+
+    // Moves pos forward to the first character of the next whole word so a chunk
+    // never starts in the middle of a word. Monotonic — only moves forward.
+    private static int SnapToWordStart(string text, int pos)
+    {
+        if (pos <= 0) return 0;
+        if (pos >= text.Length) return text.Length;
+
+        // Already at a word start (previous character is whitespace).
+        if (char.IsWhiteSpace(text[pos - 1]))
+            return pos;
+
+        // Inside a word: skip the rest of the partial word, then the whitespace,
+        // landing on the next word's first character.
+        int i = pos;
+        while (i < text.Length && !char.IsWhiteSpace(text[i]))
+            i++;
+        while (i < text.Length && char.IsWhiteSpace(text[i]))
+            i++;
+
+        return i;
     }
 
     private static List<string> SplitProfileSection(string section)

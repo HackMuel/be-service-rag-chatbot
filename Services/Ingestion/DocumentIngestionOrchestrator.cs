@@ -67,16 +67,18 @@ public class DocumentIngestionOrchestrator
         await TryUpdateDocumentStorageMetadataAsync(conn, documentId, request);
 
         var normalizedContent = _textNormalizer.Normalize(request.Content);
-        var chunks = _chunkingService.SplitBySections(normalizedContent);
+        var chunks = _chunkingService.Chunk(normalizedContent);
         _logger.LogDebug("TOTAL CHUNKS: {ChunkCount}", chunks.Count);
 
         for (int i = 0; i < chunks.Count; i++)
         {
             _logger.LogDebug(
-                "CHUNK {Index}: type={RecordType}, length={Length}",
+                "CHUNK {Index}: recordType={RecordType}, chunkType={ChunkType}, sectionTitle={SectionTitle}, length={Length}",
                 i,
-                ChunkMetadataExtractor.DetectRecordType(chunks[i]),
-                chunks[i].Length);
+                ChunkMetadataExtractor.DetectRecordType(chunks[i].Content),
+                chunks[i].ChunkType,
+                chunks[i].SectionTitle,
+                chunks[i].Content.Length);
         }
 
         _logger.LogInformation(
@@ -99,11 +101,11 @@ public class DocumentIngestionOrchestrator
                 await _chunkRepository.InsertChunkAsync(chunk);
             }
 
-            var embedding = await _embeddingIngestionService.GenerateEmbeddingAsync(chunks[i]);
+            var embedding = await _embeddingIngestionService.GenerateEmbeddingAsync(chunks[i].Content);
 
             Dictionary<uint, float>? sparseVector = null;
             if (_hybridSearchEnabled)
-                sparseVector = _embeddingIngestionService.GenerateSparseVector(chunks[i]);
+                sparseVector = _embeddingIngestionService.GenerateSparseVector(chunks[i].Content);
 
             await _qdrantService.UpsertChunkAsync(chunk, embedding, sparseVector);
         }
@@ -153,9 +155,21 @@ public class DocumentIngestionOrchestrator
         Guid documentId,
         string documentTitle,
         string department,
-        string content,
+        ContentChunk piece,
         int chunkIndex)
     {
+        var content = piece.Content;
+
+        // Prefer the chunker-provided section title / chunk type (provenance);
+        // fall back to content-based detection when the chunker left them blank.
+        var sectionTitle = string.IsNullOrWhiteSpace(piece.SectionTitle)
+            ? ChunkMetadataExtractor.ExtractSectionTitle(content)
+            : piece.SectionTitle;
+
+        var chunkType = string.IsNullOrWhiteSpace(piece.ChunkType)
+            ? ChunkMetadataExtractor.DetectChunkType(content)
+            : piece.ChunkType;
+
         return new RetrievedChunk
         {
             Id = chunkId,
@@ -179,7 +193,8 @@ public class DocumentIngestionOrchestrator
             Location = ChunkMetadataExtractor.ExtractLocation(content),
             MaintenanceStatus = ChunkMetadataExtractor.ExtractMaintenanceStatus(content),
             Technician = ChunkMetadataExtractor.ExtractTechnician(content),
-            SectionTitle = ChunkMetadataExtractor.ExtractSectionTitle(content),
+            SectionTitle = sectionTitle,
+            ChunkType = chunkType,
             ChunkIndex = chunkIndex
         };
     }

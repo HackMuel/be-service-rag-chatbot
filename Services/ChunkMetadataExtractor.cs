@@ -4,6 +4,25 @@ namespace be_service.Services;
 
 public static class ChunkMetadataExtractor
 {
+    // Generic heading detection (non-dummy documents):
+    //   "SECTION 8 - FAQ dan Kasus Uji Retrieval"
+    //   "2.4 Jadwal Backup NusaCloud" / "8.2 Pertanyaan ..." / "1.1 Judul"
+    //   "BAB I Judul" / "BAB II Judul"
+    // Multiline form is used by the chunker to locate split points; the
+    // single-line form tests whether content STARTS with a heading.
+    private const string GenericHeadingBody =
+        @"(?:SECTION\s+\d+\s*[-–—].*)" +
+        @"|(?:BAB\s+[IVXLCDM0-9]+\b.*)" +
+        @"|(?:\d+\.\d+(?:\.\d+)?\s+\S.*)";
+
+    public static readonly Regex GenericHeadingRegex = new(
+        $@"^[ \t]*(?:{GenericHeadingBody})$",
+        RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex SingleLineHeadingRegex = new(
+        $@"^[ \t]*(?:{GenericHeadingBody})$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     public static string NormalizeNik(string value)
     {
         var normalized = Regex.Replace(value, @"\s+", "").ToUpperInvariant();
@@ -32,6 +51,11 @@ public static class ChunkMetadataExtractor
             : normalized;
     }
 
+    // Classifies a chunk by record type. Conservative for generic documents:
+    // only the dummy dataset's specific structured markers / section headings
+    // map to a domain type; everything else is "document". This prevents a
+    // generic doc from being misread as "audit"/"sop" just because it mentions
+    // a word like "backup", "audit", "logbook", or "keamanan".
     public static string DetectRecordType(string content)
     {
         if (content.Contains("Data Karyawan:", StringComparison.OrdinalIgnoreCase))
@@ -46,16 +70,52 @@ public static class ChunkMetadataExtractor
         if (content.Contains("Profil Perusahaan:", StringComparison.OrdinalIgnoreCase))
             return "profile";
 
-        if (content.Contains("SOP", StringComparison.OrdinalIgnoreCase))
+        // Tightened: require the dummy SOP heading, not bare "SOP" anywhere.
+        if (content.Contains("SOP Keamanan", StringComparison.OrdinalIgnoreCase))
             return "sop";
 
-        if (content.Contains("Catatan Audit", StringComparison.OrdinalIgnoreCase) ||
-            content.Contains("Audit internal", StringComparison.OrdinalIgnoreCase) ||
-            content.Contains("backup otomatis", StringComparison.OrdinalIgnoreCase) ||
-            content.Contains("logbook", StringComparison.OrdinalIgnoreCase))
+        // Tightened: require the dummy audit section heading. The previous loose
+        // triggers ("Audit internal", "backup otomatis", "logbook") caused
+        // generic documents to be misclassified as audit.
+        if (content.Contains("Catatan Audit", StringComparison.OrdinalIgnoreCase))
             return "audit";
 
         return "document";
+    }
+
+    // Content-based fallback for chunkType when provenance is not available
+    // (e.g. the QdrantPointWriter Guid overload). The ingestion pipeline sets
+    // the precise chunkType from the chunker instead.
+    public static string DetectChunkType(string content)
+    {
+        if (content.Contains("Data Karyawan:", StringComparison.OrdinalIgnoreCase) ||
+            content.Contains("Rekap Lembur:", StringComparison.OrdinalIgnoreCase) ||
+            content.Contains("Log Maintenance:", StringComparison.OrdinalIgnoreCase))
+            return "structured_row";
+
+        if (content.Contains("Profil Perusahaan:", StringComparison.OrdinalIgnoreCase))
+            return "structured_fact";
+
+        return "narrative_section";
+    }
+
+    // Returns the leading generic heading if content STARTS with one, else "".
+    public static string TryExtractGenericHeading(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return "";
+
+        var firstLine = content
+            .Split('\n')
+            .Select(l => l.Trim())
+            .FirstOrDefault(l => l.Length > 0) ?? "";
+
+        if (firstLine.Length == 0)
+            return "";
+
+        return SingleLineHeadingRegex.IsMatch(firstLine)
+            ? Regex.Replace(firstLine, @"\s+", " ").Trim()
+            : "";
     }
 
     public static string ExtractNik(string content)
@@ -145,10 +205,12 @@ public static class ChunkMetadataExtractor
         if (content.Contains("SOP Keamanan", StringComparison.OrdinalIgnoreCase))
             return "SOP Keamanan Area Kilang";
 
-        if (content.Contains("Audit", StringComparison.OrdinalIgnoreCase))
+        if (content.Contains("Catatan Audit", StringComparison.OrdinalIgnoreCase))
             return "Catatan Audit dan Keamanan";
 
-        return "";
+        // Generic documents: if the chunk starts with a recognizable heading
+        // (SECTION N - ..., N.N ..., BAB ...), use it as the section title.
+        return TryExtractGenericHeading(content);
     }
 
     private static string ExtractByLabel(string content, string label)
