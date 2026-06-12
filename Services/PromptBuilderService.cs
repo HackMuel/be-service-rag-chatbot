@@ -1,5 +1,4 @@
 using be_service.Models;
-using System.Text.RegularExpressions;
 
 namespace be_service.Services;
 
@@ -35,9 +34,7 @@ ATURAN:
 - Jika ditemukan lebih dari satu orang atau lebih dari satu record dengan nama yang sama, tampilkan semuanya.
 - Jangan menggabungkan Data Karyawan, Rekap Lembur, SOP, dan Log Maintenance menjadi satu record.
 - Kelompokkan jawaban berdasarkan RecordType jika context berisi employee, overtime, maintenance, sop, profile, audit, atau document.
-- Jika context berisi Data Karyawan, tampilkan semua field: NIK, Nama, Divisi, Jabatan, Shift, Status.
-- Jika context berisi Rekap Lembur, tampilkan semua field: Tanggal, Nama, Divisi, Durasi, Approval.
-- Jika context berisi Log Maintenance, tampilkan semua field: Kode, Peralatan, Lokasi, Status, Teknisi.
+- Jawab hanya field atau informasi yang relevan dengan pertanyaan user. Jika pertanyaan meminta semua data atau data lengkap, tampilkan semua field yang tersedia di CONTEXT.
 - Jika context berisi SOP, tampilkan poin-poin SOP yang tersedia.
 - Jangan menyimpulkan bahwa seseorang boleh mengakses area tertentu hanya karena ada aturan safety briefing. Jika context menyebut akses hanya untuk pihak tertentu, pihak lain dianggap tidak disebut atau tidak diperbolehkan berdasarkan context.
 - Jika context berisi audit, jawab berdasarkan catatan audit yang tersedia.
@@ -47,6 +44,42 @@ ATURAN:
 - Untuk pertanyaan risiko, keselamatan, pengawasan, operasional, prosedur, atau insiden, prioritaskan poin yang relevan: APD, larangan perangkat elektronik non-sertifikasi, pemeriksaan kartu akses, safety briefing shift malam, akses terbatas area tangki, batas kecepatan kendaraan, simulasi evakuasi kebakaran, kepatuhan APD, pelanggaran minor, dan CCTV thermal jika tersedia di CONTEXT.
 - Jawab singkat, jelas, profesional, dan langsung ke pertanyaan user.
 - Jika harus memakai bullet, gunakan format ""- "" dan jangan lebih dari 6 bullet.
+
+=====================
+CONTEXT:
+{context}
+=====================
+
+PERTANYAAN:
+{question}
+
+JAWABAN:
+";
+    }
+
+    // Neutral prompt for the semantic path — no domain-specific terms or field instructions.
+    public string BuildSemanticPrompt(string question, List<RetrievedChunk> chunks)
+    {
+        var context = string.Join(
+            "\n\n---\n\n",
+            chunks.Select((x, i) =>
+            {
+                var title = string.IsNullOrWhiteSpace(x.DocumentTitle)
+                    ? ""
+                    : $" ({x.DocumentTitle})";
+                return $"[Sumber {i + 1}]{title}\n{(x.Content ?? "").Trim()}";
+            }));
+
+        return $@"Kamu adalah asisten yang menjawab pertanyaan berdasarkan dokumen yang diberikan.
+
+ATURAN:
+- Jawab HANYA berdasarkan CONTEXT di bawah ini.
+- Jika informasi tidak ada di CONTEXT, jawab: ""Informasi tidak ditemukan dalam dokumen yang tersedia.""
+- Jangan mengarang atau menambahkan informasi dari luar CONTEXT.
+- Gunakan Bahasa Indonesia yang jelas dan ringkas.
+- Jawab langsung tanpa pembuka seperti ""Berdasarkan dokumen..."" atau penutup basa-basi.
+- Jika ada beberapa sumber relevan, gabungkan menjadi satu jawaban yang koheren.
+- Jika pertanyaan meminta daftar, sajikan dalam format yang mudah dibaca.
 
 =====================
 CONTEXT:
@@ -135,12 +168,8 @@ Content:
         return string.Join("\n", cleanedSegments);
     }
 
-    private static IEnumerable<string> SplitContextSegments(string content)
-    {
-        return Regex.Split(
-            content,
-            @"(?<=[.!?])\s+|\r?\n+");
-    }
+    private static IEnumerable<string> SplitContextSegments(string content) =>
+        QueryHelpers.SplitContentSegments(content);
 
     private static bool IsNoiseDisclaimer(string value)
     {
@@ -154,12 +183,8 @@ Content:
             "pengembangan chatbot enterprise");
     }
 
-    private static string ResolveRecordType(RetrievedChunk chunk)
-    {
-        return string.IsNullOrWhiteSpace(chunk.RecordType)
-            ? ChunkMetadataExtractor.DetectRecordType(chunk.Content)
-            : chunk.RecordType;
-    }
+    private static string ResolveRecordType(RetrievedChunk chunk) =>
+        QueryHelpers.ResolveRecordType(chunk);
 
     private static string ValueOrFallback(string value, string fallback)
     {
@@ -169,9 +194,6 @@ Content:
         return string.IsNullOrWhiteSpace(fallback) ? "-" : fallback;
     }
 
-    private static bool ContainsAny(string value, params string[] keywords)
-    {
-        return keywords.Any(keyword =>
-            value.Contains(keyword, StringComparison.OrdinalIgnoreCase));
-    }
+    private static bool ContainsAny(string value, params string[] keywords) =>
+        QueryHelpers.ContainsAny(value, keywords);
 }

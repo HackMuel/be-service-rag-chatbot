@@ -14,6 +14,8 @@ public class DocumentIngestionOrchestrator
     private readonly QdrantService _qdrantService;
     private readonly ChunkRepository _chunkRepository;
     private readonly StorageModeOptions _storageModeOptions;
+    private readonly DatasetSchemaOptions _schema;
+    private readonly bool _hybridSearchEnabled;
     private readonly ILogger<DocumentIngestionOrchestrator> _logger;
 
     public DocumentIngestionOrchestrator(
@@ -24,6 +26,8 @@ public class DocumentIngestionOrchestrator
         QdrantService qdrantService,
         ChunkRepository chunkRepository,
         IOptions<StorageModeOptions> storageModeOptions,
+        IOptions<RetrievalOptions> retrievalOptions,
+        IOptions<DatasetSchemaOptions> datasetSchema,
         ILogger<DocumentIngestionOrchestrator> logger)
     {
         _configuration = configuration;
@@ -33,6 +37,8 @@ public class DocumentIngestionOrchestrator
         _qdrantService = qdrantService;
         _chunkRepository = chunkRepository;
         _storageModeOptions = storageModeOptions.Value;
+        _schema = datasetSchema.Value;
+        _hybridSearchEnabled = retrievalOptions.Value.HybridSearchEnabled;
         _logger = logger;
     }
 
@@ -64,13 +70,18 @@ public class DocumentIngestionOrchestrator
         await TryUpdateDocumentStorageMetadataAsync(conn, documentId, request);
 
         var normalizedContent = _textNormalizer.Normalize(request.Content);
-        var chunks = _chunkingService.SplitBySections(normalizedContent);
-        Console.WriteLine($"TOTAL CHUNKS: {chunks.Count}");
+        var chunks = _chunkingService.Chunk(normalizedContent);
+        _logger.LogDebug("TOTAL CHUNKS: {ChunkCount}", chunks.Count);
 
         for (int i = 0; i < chunks.Count; i++)
         {
-            Console.WriteLine(
-                $"CHUNK {i}: type={ChunkMetadataExtractor.DetectRecordType(chunks[i])}, length={chunks[i].Length}");
+            _logger.LogDebug(
+                "CHUNK {Index}: recordType={RecordType}, chunkType={ChunkType}, sectionTitle={SectionTitle}, length={Length}",
+                i,
+                ChunkMetadataExtractor.DetectRecordType(chunks[i].Content),
+                chunks[i].ChunkType,
+                chunks[i].SectionTitle,
+                chunks[i].Content.Length);
         }
 
         _logger.LogInformation(
@@ -93,11 +104,13 @@ public class DocumentIngestionOrchestrator
                 await _chunkRepository.InsertChunkAsync(chunk);
             }
 
-            var embedding = await _embeddingIngestionService.GenerateEmbeddingAsync(chunks[i]);
+            var embedding = await _embeddingIngestionService.GenerateEmbeddingAsync(chunks[i].Content);
 
-            await _qdrantService.UpsertChunkAsync(
-                chunk,
-                embedding);
+            Dictionary<uint, float>? sparseVector = null;
+            if (_hybridSearchEnabled)
+                sparseVector = _embeddingIngestionService.GenerateSparseVector(chunks[i].Content);
+
+            await _qdrantService.UpsertChunkAsync(chunk, embedding, sparseVector);
         }
 
         return documentId;
@@ -140,39 +153,65 @@ public class DocumentIngestionOrchestrator
         }
     }
 
-    private static RetrievedChunk CreateRetrievedChunk(
+    private RetrievedChunk CreateRetrievedChunk(
         Guid chunkId,
         Guid documentId,
         string documentTitle,
         string department,
-        string content,
+        ContentChunk piece,
         int chunkIndex)
     {
-        return new RetrievedChunk
+        var content = piece.Content;
+        var recordType = ChunkMetadataExtractor.DetectRecordType(content);
+
+        // Prefer the chunker-provided section title / chunk type (provenance);
+        // fall back to content-based detection when the chunker left them blank.
+        var sectionTitle = string.IsNullOrWhiteSpace(piece.SectionTitle)
+            ? ChunkMetadataExtractor.ExtractSectionTitle(content)
+            : piece.SectionTitle;
+
+        var chunkType = string.IsNullOrWhiteSpace(piece.ChunkType)
+            ? ChunkMetadataExtractor.DetectChunkType(content)
+            : piece.ChunkType;
+
+        // Schema-driven extraction: only the fields belonging to this recordType.
+        var datasetFields = ChunkMetadataExtractor.ExtractFields(
+            content,
+            _schema.Find(recordType)?.Fields ?? Enumerable.Empty<DatasetField>());
+
+        var chunk = new RetrievedChunk
         {
             Id = chunkId,
             DocumentId = documentId,
             DocumentTitle = documentTitle,
             Content = content,
             Similarity = 1.0f,
-            RecordType = ChunkMetadataExtractor.DetectRecordType(content),
-            Nik = ChunkMetadataExtractor.ExtractNik(content),
-            Name = ChunkMetadataExtractor.ExtractName(content),
-            MaintenanceCode = ChunkMetadataExtractor.ExtractMaintenanceCode(content),
-            Date = ChunkMetadataExtractor.ExtractDate(content),
-            Division = ChunkMetadataExtractor.ExtractDivision(content),
+            RecordType = recordType,
             Department = department,
-            Position = ChunkMetadataExtractor.ExtractPosition(content),
-            Shift = ChunkMetadataExtractor.ExtractShift(content),
-            EmployeeStatus = ChunkMetadataExtractor.ExtractEmployeeStatus(content),
-            Duration = ChunkMetadataExtractor.ExtractDuration(content),
-            Approval = ChunkMetadataExtractor.ExtractApproval(content),
-            Equipment = ChunkMetadataExtractor.ExtractEquipment(content),
-            Location = ChunkMetadataExtractor.ExtractLocation(content),
-            MaintenanceStatus = ChunkMetadataExtractor.ExtractMaintenanceStatus(content),
-            Technician = ChunkMetadataExtractor.ExtractTechnician(content),
-            SectionTitle = ChunkMetadataExtractor.ExtractSectionTitle(content),
-            ChunkIndex = chunkIndex
+            SectionTitle = sectionTitle,
+            ChunkType = chunkType,
+            ChunkIndex = chunkIndex,
+            DatasetFields = datasetFields
         };
+
+        // Mirror dataset fields onto the typed legacy properties so the optional
+        // Postgres chunk store still works. Unknown-for-recordType fields stay
+        // empty (the desired cleanup — no cross-type values).
+        chunk.Nik               = datasetFields.GetValueOrDefault("nik", "");
+        chunk.Name              = datasetFields.GetValueOrDefault("name", "");
+        chunk.MaintenanceCode   = datasetFields.GetValueOrDefault("maintenanceCode", "");
+        chunk.Date              = datasetFields.GetValueOrDefault("date", "");
+        chunk.Division          = datasetFields.GetValueOrDefault("division", "");
+        chunk.Position          = datasetFields.GetValueOrDefault("position", "");
+        chunk.Shift             = datasetFields.GetValueOrDefault("shift", "");
+        chunk.EmployeeStatus    = datasetFields.GetValueOrDefault("employeeStatus", "");
+        chunk.Duration          = datasetFields.GetValueOrDefault("duration", "");
+        chunk.Approval          = datasetFields.GetValueOrDefault("approval", "");
+        chunk.Equipment         = datasetFields.GetValueOrDefault("equipment", "");
+        chunk.Location          = datasetFields.GetValueOrDefault("location", "");
+        chunk.MaintenanceStatus = datasetFields.GetValueOrDefault("maintenanceStatus", "");
+        chunk.Technician        = datasetFields.GetValueOrDefault("technician", "");
+
+        return chunk;
     }
 }

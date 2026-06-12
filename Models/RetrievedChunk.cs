@@ -24,5 +24,14 @@ public class RetrievedChunk
     public string MaintenanceStatus { get; set; } = string.Empty;
     public string Technician { get; set; } = string.Empty;
     public string SectionTitle { get; set; } = string.Empty;
+    // Provenance of the chunk produced during ingestion:
+    // structured_row | structured_fact | narrative_section | narrative_chunk.
+    // Additive — flat/legacy payload fields are unaffected.
+    public string ChunkType { get; set; } = string.Empty;
     public int? ChunkIndex { get; set; }
+
+    // Flat dataset payload fields for this chunk's recordType, produced by the
+    // schema-driven extractor at ingest time. Written to Qdrant as-is so a chunk
+    // only carries fields that belong to its recordType (no empty cross-type slots).
+    public Dictionary<string, string> DatasetFields { get; set; } = new();
 }

@@ -8,7 +8,7 @@ public class RetrievalService
 {
     private readonly QdrantService _qdrantService;
     private readonly OllamaService _ollamaService;
-    private readonly ChunkRepository _chunkRepository;
+    private readonly SparseBm25Encoder _sparseEncoder;
     private readonly StructuredEntityResolver _structuredEntityResolver;
     private readonly RetrievalOptions _retrievalOptions;
     private readonly ILogger<RetrievalService> _logger;
@@ -19,11 +19,12 @@ public class RetrievalService
         ChunkRepository chunkRepository,
         StructuredEntityResolver structuredEntityResolver,
         IOptions<RetrievalOptions> retrievalOptions,
+        SparseBm25Encoder sparseEncoder,
         ILogger<RetrievalService> logger)
     {
         _qdrantService = qdrantService;
         _ollamaService = ollamaService;
-        _chunkRepository = chunkRepository;
+        _sparseEncoder = sparseEncoder;
         _structuredEntityResolver = structuredEntityResolver;
         _retrievalOptions = retrievalOptions.Value;
         _logger = logger;
@@ -31,6 +32,22 @@ public class RetrievalService
 
     public async Task<RagRetrievalResult> RetrieveAsync(RagQueryAnalysis analysis)
     {
+        if (analysis.IsBlocked)
+        {
+            _logger.LogInformation(
+                "RETRIEVAL_BLOCKED reason={Reason}",
+                analysis.BlockReason);
+
+            return new RagRetrievalResult
+            {
+                Chunks = new(),
+                RetrievalMode = "blocked",
+                AnswerLevel = AnswerLevel.Blocked,
+                RetrievalSource = "none",
+                BlockReason = analysis.BlockReason
+            };
+        }
+
         var chunks = new List<RetrievedChunk>();
         var retrievalMode = "semantic";
         var contextLimit = 5;
@@ -50,7 +67,7 @@ public class RetrievalService
         */
         if (!string.IsNullOrWhiteSpace(analysis.Nik))
         {
-            chunks = NormalizeQdrantExactChunks(
+            chunks = NormalizeQdrantChunks(
                 "exact-nik",
                 await _qdrantService.SearchByNikAsync(analysis.Nik));
             retrievalMode = "exact-nik";
@@ -59,7 +76,7 @@ public class RetrievalService
         }
         else if (!string.IsNullOrWhiteSpace(analysis.MaintenanceCode))
         {
-            chunks = NormalizeQdrantExactChunks(
+            chunks = NormalizeQdrantChunks(
                 "exact-maintenance-code",
                 await _qdrantService.SearchByMaintenanceCodeAsync(analysis.MaintenanceCode));
             retrievalMode = "exact-maintenance-code";
@@ -68,7 +85,7 @@ public class RetrievalService
         }
         else if (!string.IsNullOrWhiteSpace(analysis.Date))
         {
-            chunks = NormalizeQdrantExactChunks(
+            chunks = NormalizeQdrantChunks(
                 "exact-date",
                 await _qdrantService.SearchByDateAsync(analysis.Date));
             retrievalMode = "exact-date";
@@ -119,7 +136,7 @@ public class RetrievalService
         {
             if (analysis.IsEmployeeQuery && !string.IsNullOrWhiteSpace(analysis.Division))
             {
-                chunks = NormalizeQdrantStructuredChunks(
+                chunks = NormalizeQdrantChunks(
                     "employee_by_division",
                     await _qdrantService.SearchEmployeesByDivisionAsync(analysis.Division));
                 retrievalMode = "employee_by_division";
@@ -128,7 +145,7 @@ public class RetrievalService
             }
             else if (analysis.IsEmployeeQuery && !string.IsNullOrWhiteSpace(analysis.Shift))
             {
-                chunks = NormalizeQdrantStructuredChunks(
+                chunks = NormalizeQdrantChunks(
                     "employee_by_shift",
                     await _qdrantService.SearchEmployeesByShiftAsync(analysis.Shift));
                 retrievalMode = "employee_by_shift";
@@ -137,7 +154,7 @@ public class RetrievalService
             }
             else if (analysis.IsEmployeeQuery && !string.IsNullOrWhiteSpace(analysis.EmployeeStatus))
             {
-                chunks = NormalizeQdrantStructuredChunks(
+                chunks = NormalizeQdrantChunks(
                     "employee_by_status",
                     await _qdrantService.SearchEmployeesByStatusAsync(analysis.EmployeeStatus));
                 retrievalMode = "employee_by_status";
@@ -146,7 +163,7 @@ public class RetrievalService
             }
             else if (analysis.IsEmployeeQuery && !string.IsNullOrWhiteSpace(analysis.Position))
             {
-                chunks = NormalizeQdrantStructuredChunks(
+                chunks = NormalizeQdrantChunks(
                     "employee_by_position",
                     await _qdrantService.SearchEmployeesByPositionAsync(analysis.Position));
                 retrievalMode = "employee_by_position";
@@ -156,7 +173,7 @@ public class RetrievalService
             else if ((analysis.IsOvertimeQuery || analysis.Question.Contains("approval", StringComparison.OrdinalIgnoreCase)) &&
                      !string.IsNullOrWhiteSpace(analysis.Approval))
             {
-                chunks = NormalizeQdrantStructuredChunks(
+                chunks = NormalizeQdrantChunks(
                     "overtime_by_approval",
                     await _qdrantService.SearchOvertimeByApprovalAsync(analysis.Approval));
                 retrievalMode = "overtime_by_approval";
@@ -165,7 +182,7 @@ public class RetrievalService
             }
             else if (analysis.IsOvertimeQuery && !string.IsNullOrWhiteSpace(analysis.Division))
             {
-                chunks = NormalizeQdrantStructuredChunks(
+                chunks = NormalizeQdrantChunks(
                     "overtime_by_division",
                     await _qdrantService.SearchOvertimeByDivisionAsync(analysis.Division));
                 retrievalMode = "overtime_by_division";
@@ -174,7 +191,7 @@ public class RetrievalService
             }
             else if (analysis.IsMaintenanceQuery && !string.IsNullOrWhiteSpace(analysis.MaintenanceStatus))
             {
-                chunks = NormalizeQdrantStructuredChunks(
+                chunks = NormalizeQdrantChunks(
                     "maintenance_by_status",
                     await _qdrantService.SearchMaintenanceByStatusAsync(analysis.MaintenanceStatus));
                 retrievalMode = "maintenance_by_status";
@@ -183,7 +200,7 @@ public class RetrievalService
             }
             else if (analysis.IsMaintenanceQuery && !string.IsNullOrWhiteSpace(analysis.Location))
             {
-                chunks = NormalizeQdrantStructuredChunks(
+                chunks = NormalizeQdrantChunks(
                     "maintenance_by_location",
                     await _qdrantService.SearchMaintenanceByLocationAsync(analysis.Location));
                 retrievalMode = "maintenance_by_location";
@@ -194,7 +211,7 @@ public class RetrievalService
                      analysis.Question.Contains("teknisi", StringComparison.OrdinalIgnoreCase) &&
                      !string.IsNullOrWhiteSpace(analysis.Technician))
             {
-                chunks = NormalizeQdrantStructuredChunks(
+                chunks = NormalizeQdrantChunks(
                     "maintenance_by_technician",
                     await _qdrantService.SearchMaintenanceByTechnicianAsync(analysis.Technician));
                 retrievalMode = "maintenance_by_technician";
@@ -205,7 +222,7 @@ public class RetrievalService
             {
                 if (analysis.IsOvertimeQuery)
                 {
-                    chunks = NormalizeQdrantStructuredChunks(
+                    chunks = NormalizeQdrantChunks(
                         "exact-name-overtime",
                         await _qdrantService.SearchOvertimeByNameAsync(
                             analysis.PersonKeyword,
@@ -217,7 +234,7 @@ public class RetrievalService
 
                 if (!chunks.Any())
                 {
-                    chunks = NormalizeQdrantStructuredChunks(
+                    chunks = NormalizeQdrantChunks(
                         "exact-name",
                         await _qdrantService.SearchByNameAsync(
                             analysis.PersonKeyword,
@@ -260,7 +277,11 @@ public class RetrievalService
         {
             var embedding = await _ollamaService.GenerateEmbeddingAsync(analysis.Question);
 
-            var vectorHits = await _qdrantService.SearchSemanticAsync(embedding, SemanticTopK);
+            Dictionary<uint, float>? sparseVector = null;
+            if (_retrievalOptions.HybridSearchEnabled)
+                sparseVector = _sparseEncoder.Encode(analysis.Question);
+
+            var vectorHits = await _qdrantService.SearchSemanticAsync(embedding, SemanticTopK, sparseVector);
             qdrantVectorSearch = true;
 
             vectorHits = vectorHits
@@ -302,6 +323,44 @@ public class RetrievalService
         };
     }
 
+    // Pure vector search — no keyword cascade, no record-type filter.
+    // Used by the semantic dispatch path when RagMode = Hybrid.
+    public async Task<RagRetrievalResult> SearchSemanticOnlyAsync(string question)
+    {
+        _logger.LogInformation(
+            "SEMANTIC_ONLY query length={Length}", question.Length);
+
+        var embedding = await _ollamaService.GenerateEmbeddingAsync(question);
+
+        Dictionary<uint, float>? sparseVector = null;
+        if (_retrievalOptions.HybridSearchEnabled)
+            sparseVector = _sparseEncoder.Encode(question);
+
+        var hits = await _qdrantService.SearchSemanticAsync(embedding, SemanticTopK, sparseVector);
+
+        var chunks = hits
+            .Where(x => x.Similarity >= SemanticScoreThreshold)
+            .Where(x => !string.IsNullOrWhiteSpace(x.Content))
+            .OrderByDescending(x => x.Similarity)
+            .Take(SemanticMaxContextChunks)
+            .ToList();
+
+        _logger.LogInformation(
+            "SEMANTIC_ONLY count={Count}, topScore={Score:F3}",
+            chunks.Count,
+            chunks.FirstOrDefault()?.Similarity ?? 0f);
+
+        return new RagRetrievalResult
+        {
+            Chunks = chunks,
+            RetrievalMode = "semantic",
+            ContextLimit = SemanticMaxContextChunks,
+            AnswerLevel = AnswerLevel.SemanticGrounded,
+            RetrievalSource = "qdrant_vector_payload",
+            QdrantVectorSearch = true
+        };
+    }
+
     private async Task<(List<RetrievedChunk> Chunks, string RetrievalMode, int ContextLimit)> TryRetrieveByStructuredEntityAsync(
         RagQueryAnalysis analysis)
     {
@@ -317,62 +376,62 @@ public class RetrievalService
         var chunks = entity.FieldName switch
         {
             "name" when analysis.IsOvertimeQuery =>
-                NormalizeQdrantStructuredChunks(
+                NormalizeQdrantChunks(
                     "exact-name-overtime",
                     await _qdrantService.SearchOvertimeByNameAsync(entity.Value, 10)),
 
             "name" =>
-                NormalizeQdrantStructuredChunks(
+                NormalizeQdrantChunks(
                     "exact-name",
                     await _qdrantService.SearchByNameAsync(entity.Value, 10)),
 
             "division" when analysis.IsOvertimeQuery =>
-                NormalizeQdrantStructuredChunks(
+                NormalizeQdrantChunks(
                     "overtime_by_division",
                     await _qdrantService.SearchOvertimeByDivisionAsync(entity.Value)),
 
             "division" =>
-                NormalizeQdrantStructuredChunks(
+                NormalizeQdrantChunks(
                     "employee_by_division",
                     await _qdrantService.SearchEmployeesByDivisionAsync(entity.Value)),
 
             "shift" =>
-                NormalizeQdrantStructuredChunks(
+                NormalizeQdrantChunks(
                     "employee_by_shift",
                     await _qdrantService.SearchEmployeesByShiftAsync(entity.Value)),
 
             "employeeStatus" =>
-                NormalizeQdrantStructuredChunks(
+                NormalizeQdrantChunks(
                     "employee_by_status",
                     await _qdrantService.SearchEmployeesByStatusAsync(entity.Value)),
 
             "position" =>
-                NormalizeQdrantStructuredChunks(
+                NormalizeQdrantChunks(
                     "employee_by_position",
                     await _qdrantService.SearchEmployeesByPositionAsync(entity.Value)),
 
             "approval" =>
-                NormalizeQdrantStructuredChunks(
+                NormalizeQdrantChunks(
                     "overtime_by_approval",
                     await _qdrantService.SearchOvertimeByApprovalAsync(entity.Value)),
 
             "maintenanceStatus" =>
-                NormalizeQdrantStructuredChunks(
+                NormalizeQdrantChunks(
                     "maintenance_by_status",
                     await _qdrantService.SearchMaintenanceByStatusAsync(entity.Value)),
 
             "location" =>
-                NormalizeQdrantStructuredChunks(
+                NormalizeQdrantChunks(
                     "maintenance_by_location",
                     await _qdrantService.SearchMaintenanceByLocationAsync(entity.Value)),
 
             "technician" =>
-                NormalizeQdrantStructuredChunks(
+                NormalizeQdrantChunks(
                     "maintenance_by_technician",
                     await _qdrantService.SearchMaintenanceByTechnicianAsync(entity.Value)),
 
             "equipment" =>
-                NormalizeQdrantStructuredChunks(
+                NormalizeQdrantChunks(
                     "maintenance_by_equipment",
                     await _qdrantService.SearchMaintenanceByEquipmentAsync(entity.Value)),
 
@@ -409,7 +468,7 @@ public class RetrievalService
         var limit = GetGenericContextLimit(recordType);
         var chunks = await _qdrantService.SearchByRecordTypeAsync(recordType, limit);
 
-        return NormalizeQdrantGenericRecordTypeChunks(recordType, chunks);
+        return NormalizeQdrantChunks(recordType, chunks);
     }
 
     private async Task<List<RetrievedChunk>> SearchQdrantRecordTypeAsync(
@@ -418,7 +477,7 @@ public class RetrievalService
     {
         var chunks = await _qdrantService.SearchByRecordTypeAsync(recordType, limit);
 
-        return NormalizeQdrantRecordTypeChunks(recordType, chunks);
+        return NormalizeQdrantChunks(recordType, chunks);
     }
 
     private async Task<List<RetrievedChunk>> SearchQdrantRecordTypeAsync(
@@ -428,38 +487,10 @@ public class RetrievalService
     {
         var chunks = await _qdrantService.SearchByRecordTypeAsync(recordType, keyword, limit);
 
-        return NormalizeQdrantRecordTypeChunks(recordType, chunks);
+        return NormalizeQdrantChunks(recordType, chunks);
     }
 
-    private List<RetrievedChunk> NormalizeQdrantRecordTypeChunks(
-        string recordType,
-        List<RetrievedChunk> chunks)
-    {
-        if (!chunks.Any())
-        {
-            return chunks;
-        }
-
-        var chunksWithPayload = chunks
-            .Where(HasQdrantPayload)
-            .ToList();
-
-        if (chunksWithPayload.Count != chunks.Count)
-        {
-            _logger.LogWarning(
-                "Qdrant recordType payload missing. Re-ingest required. recordType={RecordType}, hits={HitCount}, withPayload={PayloadCount}",
-                recordType,
-                chunks.Count,
-                chunksWithPayload.Count);
-        }
-
-        return chunksWithPayload
-            .GroupBy(GetQdrantRecordDedupKey)
-            .Select(x => x.First())
-            .ToList();
-    }
-
-    private List<RetrievedChunk> NormalizeQdrantExactChunks(
+    private List<RetrievedChunk> NormalizeQdrantChunks(
         string lookupName,
         List<RetrievedChunk> chunks)
     {
@@ -475,64 +506,8 @@ public class RetrievalService
         if (chunksWithPayload.Count != chunks.Count)
         {
             _logger.LogWarning(
-                "Qdrant exact payload missing. Re-ingest required. lookup={LookupName}, hits={HitCount}, withPayload={PayloadCount}",
+                "Qdrant payload missing. Re-ingest required. lookup={LookupName}, hits={HitCount}, withPayload={PayloadCount}",
                 lookupName,
-                chunks.Count,
-                chunksWithPayload.Count);
-        }
-
-        return chunksWithPayload
-            .GroupBy(GetQdrantRecordDedupKey)
-            .Select(x => x.First())
-            .ToList();
-    }
-
-    private List<RetrievedChunk> NormalizeQdrantStructuredChunks(
-        string lookupName,
-        List<RetrievedChunk> chunks)
-    {
-        if (!chunks.Any())
-        {
-            return chunks;
-        }
-
-        var chunksWithPayload = chunks
-            .Where(HasQdrantPayload)
-            .ToList();
-
-        if (chunksWithPayload.Count != chunks.Count)
-        {
-            _logger.LogWarning(
-                "Qdrant structured payload missing. Re-ingest required. lookup={LookupName}, hits={HitCount}, withPayload={PayloadCount}",
-                lookupName,
-                chunks.Count,
-                chunksWithPayload.Count);
-        }
-
-        return chunksWithPayload
-            .GroupBy(GetQdrantRecordDedupKey)
-            .Select(x => x.First())
-            .ToList();
-    }
-
-    private List<RetrievedChunk> NormalizeQdrantGenericRecordTypeChunks(
-        string recordType,
-        List<RetrievedChunk> chunks)
-    {
-        if (!chunks.Any())
-        {
-            return chunks;
-        }
-
-        var chunksWithPayload = chunks
-            .Where(HasQdrantPayload)
-            .ToList();
-
-        if (chunksWithPayload.Count != chunks.Count)
-        {
-            _logger.LogWarning(
-                "Qdrant generic recordType payload missing. Re-ingest required. recordType={RecordType}, hits={HitCount}, withPayload={PayloadCount}",
-                recordType,
                 chunks.Count,
                 chunksWithPayload.Count);
         }
@@ -710,12 +685,8 @@ public class RetrievalService
             "keamanan");
     }
 
-    private static string ResolveRecordType(RetrievedChunk chunk)
-    {
-        return string.IsNullOrWhiteSpace(chunk.RecordType)
-            ? ChunkMetadataExtractor.DetectRecordType(chunk.Content)
-            : chunk.RecordType;
-    }
+    private static string ResolveRecordType(RetrievedChunk chunk) =>
+        QueryHelpers.ResolveRecordType(chunk);
 
     private void LogSemanticFilter(
         int before,
@@ -733,11 +704,8 @@ public class RetrievalService
             allowedTypesText);
     }
 
-    private static bool ContainsAny(string value, params string[] keywords)
-    {
-        return keywords.Any(keyword =>
-            value.Contains(keyword, StringComparison.OrdinalIgnoreCase));
-    }
+    private static bool ContainsAny(string value, params string[] keywords) =>
+        QueryHelpers.ContainsAny(value, keywords);
 
     private int SemanticTopK => _retrievalOptions.SemanticTopK > 0
         ? _retrievalOptions.SemanticTopK

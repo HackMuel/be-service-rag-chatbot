@@ -26,6 +26,16 @@ public class QdrantService
         await _collectionService.EnsureCollectionAsync();
     }
 
+    public async Task ForceRecreateCollectionAsync()
+    {
+        await _collectionService.ForceRecreateCollectionAsync();
+    }
+
+    public async Task DeleteByDocumentIdAsync(Guid documentId)
+    {
+        await _pointWriter.DeleteByDocumentIdAsync(documentId);
+    }
+
     public async Task UpsertChunkAsync(
         Guid id,
         Guid documentId,
@@ -47,9 +57,10 @@ public class QdrantService
 
     public async Task UpsertChunkAsync(
         RetrievedChunk chunk,
-        List<float> embedding)
+        List<float> denseEmbedding,
+        Dictionary<uint, float>? sparseVector = null)
     {
-        await _pointWriter.UpsertChunkAsync(chunk, embedding);
+        await _pointWriter.UpsertChunkAsync(chunk, denseEmbedding, sparseVector);
     }
 
     public async Task<List<RetrievedChunk>> SearchAsync(
@@ -61,9 +72,10 @@ public class QdrantService
 
     public async Task<List<RetrievedChunk>> SearchSemanticAsync(
         List<float> queryEmbedding,
-        int limit = 10)
+        int limit = 10,
+        Dictionary<uint, float>? sparseVector = null)
     {
-        return await _searchClient.SearchSemanticAsync(queryEmbedding, limit);
+        return await _searchClient.SearchSemanticAsync(queryEmbedding, limit, sparseVector);
     }
 
     public async Task<List<RetrievedChunk>> SearchByNikAsync(string nik)

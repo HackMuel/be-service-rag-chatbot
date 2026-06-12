@@ -8,4 +8,5 @@ public class RagRetrievalResult
     public AnswerLevel AnswerLevel { get; set; } = AnswerLevel.Unknown;
     public string RetrievalSource { get; set; } = string.Empty;
     public bool QdrantVectorSearch { get; set; }
+    public string BlockReason { get; set; } = string.Empty;
 }

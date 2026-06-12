@@ -1,6 +1,7 @@
 using be_service.Models;
 using be_service.Repositories;
 using be_service.Services;
+using Microsoft.Extensions.Options;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -10,24 +11,49 @@ builder.Services.AddSingleton<QdrantSearchClient>();
 builder.Services.AddSingleton<QdrantFilterBuilder>();
 builder.Services.AddSingleton<QdrantScrollClient>();
 builder.Services.AddSingleton<QdrantService>();
+builder.Services.AddSingleton<SparseBm25Encoder>();
+builder.Services.AddSingleton(sp =>
+{
+    var opts = sp.GetRequiredService<IOptions<QdrantOptions>>().Value;
+    var host = new Uri(
+        string.IsNullOrWhiteSpace(opts.BaseUrl)
+            ? QdrantOptions.DefaultBaseUrl
+            : opts.BaseUrl).Host;
+    var port = opts.GrpcPort > 0 ? opts.GrpcPort : QdrantOptions.DefaultGrpcPort;
+    return new Qdrant.Client.QdrantClient(host, port, https: false);
+});
 builder.Services.AddHttpClient<OllamaService>();
-builder.Services.AddHttpClient<HealthCheckService>();
 builder.Services.AddControllers();
 builder.Services.AddScoped<IngestionService>();
-builder.Services.AddSingleton<QueryAnalyzerService>();
+builder.Services.AddScoped<FieldIntentClassifier>();
+builder.Services.AddScoped<QueryAnalyzerService>();
+builder.Services.AddScoped<QueryUnderstandingService>();
 builder.Services.AddSingleton<AnswerFormatterService>();
 builder.Services.AddSingleton<PromptBuilderService>();
 builder.Services.AddSingleton<StructuredEntityResolver>();
-builder.Services.Configure<QdrantOptions>(
-    builder.Configuration.GetSection("Qdrant"));
-builder.Services.Configure<OllamaOptions>(
-    builder.Configuration.GetSection("Ollama"));
-builder.Services.Configure<RetrievalOptions>(
-    builder.Configuration.GetSection("Retrieval"));
 builder.Services.Configure<ObjectStorageOptions>(
     builder.Configuration.GetSection("ObjectStorage"));
 builder.Services.Configure<StorageModeOptions>(
     builder.Configuration.GetSection("StorageMode"));
+builder.Services.Configure<SecurityOptions>(
+    builder.Configuration.GetSection("Security"));
+builder.Services.Configure<OllamaOptions>(
+    builder.Configuration.GetSection("Ollama"));
+builder.Services.Configure<QdrantOptions>(
+    builder.Configuration.GetSection("Qdrant"));
+builder.Services.Configure<RetrievalOptions>(
+    builder.Configuration.GetSection("Retrieval"));
+builder.Services.Configure<RagModeOptions>(
+    builder.Configuration.GetSection("Rag"));
+builder.Services.Configure<DatasetSchemaOptions>(
+    builder.Configuration.GetSection("DatasetSchema"));
+// Fall back to the built-in dummy schema when appsettings provides none, so
+// ingestion behaves identically on a fresh checkout.
+builder.Services.PostConfigure<DatasetSchemaOptions>(options =>
+{
+    if (options.RecordTypes.Count == 0)
+        options.RecordTypes = DatasetSchemaOptions.Default().RecordTypes;
+});
 builder.Services.AddScoped<ObjectStorageService>();
 builder.Services.AddScoped<RetrievalService>();
 builder.Services.AddScoped<PdfTextExtractor>();
@@ -52,19 +78,12 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 app.UseCors("AllowFrontend");
 app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
+app.UseMiddleware<ApiKeyMiddleware>();
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
-
-app.MapGet("/health", async (HealthCheckService healthCheckService) =>
-{
-    var response = await healthCheckService.CheckHealthAsync();
-
-    return Results.Ok(response);
-});
-
 app.MapPost("/api/chat", async (
     ChatRequest request,
     RagChatService ragChatService) =>
@@ -97,7 +116,19 @@ app.MapPost("/api/upload-txt", async (
         return Results.BadRequest("File kosong");
     }
 
-    var documentId = await ingestionService.IngestTxtAsync(file);
+    Guid documentId;
+
+    try
+    {
+        documentId = await ingestionService.IngestTxtAsync(file);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(
+            title: "TXT upload failed",
+            detail: ex.Message,
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
 
     return Results.Ok(new
     {
@@ -121,7 +152,19 @@ app.MapPost("/api/upload-pdf", async (
         return Results.BadRequest("File harus PDF");
     }
 
-    var documentId = await ingestionService.IngestPdfAsync(file);
+    Guid documentId;
+
+    try
+    {
+        documentId = await ingestionService.IngestPdfAsync(file);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(
+            title: "PDF upload failed",
+            detail: ex.Message,
+            statusCode: StatusCodes.Status500InternalServerError);
+    }
 
     return Results.Ok(new
     {
@@ -141,15 +184,14 @@ app.MapGet("/api/qdrant/init", async (QdrantService qdrantService) =>
     });
 });
 
-app.MapGet("/api/qdrant/status", async (HealthCheckService healthCheckService) =>
+app.MapPost("/api/qdrant/recreate", async (QdrantService qdrantService) =>
 {
-    var response = await healthCheckService.CheckQdrantStatusAsync();
+    await qdrantService.ForceRecreateCollectionAsync();
 
-    return response.Status == "ok"
-        ? Results.Ok(response)
-        : Results.Json(
-            response,
-            statusCode: StatusCodes.Status503ServiceUnavailable);
+    return Results.Ok(new
+    {
+        message = "Collection recreated with named vectors schema. Re-ingest all documents."
+    });
 });
 
 app.UseHttpsRedirection();

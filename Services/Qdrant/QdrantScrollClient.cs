@@ -106,9 +106,19 @@ public class QdrantScrollClient
     {
         var entities = new Dictionary<string, StructuredEntityMatch>(StringComparer.OrdinalIgnoreCase);
         string? offset = null;
+        const int maxPages = 1000;
+        var pageCount = 0;
 
         while (true)
         {
+            if (++pageCount > maxPages)
+            {
+                _logger.LogWarning(
+                    "GetKnownStructuredEntitiesAsync reached max page limit ({MaxPages}). Stopping early.",
+                    maxPages);
+                break;
+            }
+
             var body = new Dictionary<string, object?>
             {
                 ["limit"] = QdrantConstants.PageSize,
@@ -290,8 +300,7 @@ public class QdrantScrollClient
             "tampilkan",
             "berikan",
             "data",
-            "perusahaan",
-            "pertamina"
+            "perusahaan"
         };
 
         return stopWords.Contains(value, StringComparer.OrdinalIgnoreCase);

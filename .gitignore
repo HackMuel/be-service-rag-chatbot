@@ -2,3 +2,6 @@ bin/
 obj/
 .vscode/
 .env
+appsettings.json
+appsettings.*.json
+!appsettings.Example.json

@@ -5,9 +5,54 @@ namespace be_service.Services;
 
 public class QueryAnalyzerService
 {
-    public RagQueryAnalysis Analyze(string question)
+    private record AnswerLevelContext(
+        string Question,
+        bool HasNik,
+        bool HasMaintenanceCode,
+        bool HasDate,
+        bool IsEmployeeQuery,
+        bool IsOvertimeQuery,
+        bool IsMaintenanceQuery,
+        bool IsSopQuery,
+        bool IsProfileQuery,
+        bool IsAuditQuery,
+        bool HasDivision,
+        bool HasShift,
+        bool HasEmployeeStatus,
+        bool HasPosition,
+        bool HasMaintenanceStatus,
+        bool HasApproval,
+        bool HasLocation,
+        bool HasTechnician,
+        bool LooksLikePersonName,
+        bool IsPolicyQuestion,
+        string GenericRecordType);
+
+    private readonly FieldIntentClassifier _fieldIntentClassifier;
+
+    public QueryAnalyzerService(FieldIntentClassifier fieldIntentClassifier)
+    {
+        _fieldIntentClassifier = fieldIntentClassifier;
+    }
+
+    public async Task<RagQueryAnalysis> AnalyzeAsync(string question)
     {
         question = (question ?? "").Trim();
+
+        var keywordFields = ExtractRequestedFields(question);
+
+        // Only invoke LLM when keyword scan found nothing AND query has heuristic
+        // indicators of a synonym/informal sensitive field request. This keeps the
+        // fast path (keyword hit or no suspicious pattern) at ~1ms instead of ~6s.
+        var llmFields = new List<string>();
+        if (keywordFields.Count == 0 && MightHaveUnknownFieldIntent(question))
+        {
+            var llmIntent = await _fieldIntentClassifier.ClassifyAsync(question);
+            llmFields = llmIntent.RequestedFields;
+        }
+
+        var requestedFields = keywordFields.Union(llmFields).Distinct().ToList();
+        var fieldValidation = ValidateFields(requestedFields);
 
         var nikMatch = Regex.Match(
             question,
@@ -70,7 +115,7 @@ public class QueryAnalyzerService
             !string.IsNullOrWhiteSpace(location),
             !string.IsNullOrWhiteSpace(technician));
 
-        var answerLevel = DetermineAnswerLevel(
+        var ctx = new AnswerLevelContext(
             question,
             nikMatch.Success,
             maintenanceMatch.Success,
@@ -92,6 +137,10 @@ public class QueryAnalyzerService
             looksLikePersonName,
             isPolicyQuestion,
             genericRecordType);
+        var answerLevel = DetermineAnswerLevel(ctx);
+
+        if (fieldValidation.IsBlocked)
+            answerLevel = AnswerLevel.Blocked;
 
         return new RagQueryAnalysis
         {
@@ -136,7 +185,10 @@ public class QueryAnalyzerService
             IsPermissionQuestion = isPermissionQuestion,
             RequiresGroundedLlm = answerLevel is AnswerLevel.PolicyGrounded or AnswerLevel.SemanticGrounded,
             TargetRecordType = targetRecordType,
-            GenericRecordType = genericRecordType
+            GenericRecordType = genericRecordType,
+            RequestedFields = requestedFields,
+            IsBlocked = fieldValidation.IsBlocked,
+            BlockReason = fieldValidation.BlockReason
         };
     }
 
@@ -189,13 +241,15 @@ public class QueryAnalyzerService
             "inspeksi",
             "temuan",
             "non-konformitas",
-            "backup",
-            "server",
             "logbook",
             "anomali suhu",
             "kepatuhan apd",
             "pelanggaran minor");
     }
+
+    private static bool IsItInfraQuery(string question) =>
+        ContainsAny(question, "server", "backup", "cctv",
+            "jaringan", "infrastruktur it", "sistem it", "database server");
 
     private static bool IsOvertimeQuery(string question)
     {
@@ -265,17 +319,7 @@ public class QueryAnalyzerService
         if (isProfileQuery)
             return "profile";
 
-        if (ContainsAny(
-                question,
-                "backup",
-                "server",
-                "kepatuhan",
-                "audit",
-                "inspeksi",
-                "temuan",
-                "non-konformitas",
-                "anomali suhu",
-                "pelanggaran minor"))
+        if (isAuditQuery || IsItInfraQuery(question))
         {
             return "audit";
         }
@@ -286,29 +330,15 @@ public class QueryAnalyzerService
         return string.Empty;
     }
 
-    private static AnswerLevel DetermineAnswerLevel(
-        string question,
-        bool hasNik,
-        bool hasMaintenanceCode,
-        bool hasDate,
-        bool isEmployeeQuery,
-        bool isOvertimeQuery,
-        bool isMaintenanceQuery,
-        bool isSopQuery,
-        bool isProfileQuery,
-        bool isAuditQuery,
-        bool hasDivision,
-        bool hasShift,
-        bool hasEmployeeStatus,
-        bool hasPosition,
-        bool hasMaintenanceStatus,
-        bool hasApproval,
-        bool hasLocation,
-        bool hasTechnician,
-        bool looksLikePersonName,
-        bool isPolicyQuestion,
-        string genericRecordType)
+    private static AnswerLevel DetermineAnswerLevel(AnswerLevelContext ctx)
     {
+        var (question, hasNik, hasMaintenanceCode, hasDate,
+             isEmployeeQuery, isOvertimeQuery, isMaintenanceQuery,
+             isSopQuery, isProfileQuery, isAuditQuery,
+             hasDivision, hasShift, hasEmployeeStatus, hasPosition,
+             hasMaintenanceStatus, hasApproval, hasLocation, hasTechnician,
+             looksLikePersonName, isPolicyQuestion, genericRecordType) = ctx;
+
         var looksLikeStructuredName =
             looksLikePersonName &&
             !isSopQuery &&
@@ -363,14 +393,14 @@ public class QueryAnalyzerService
         if (isProfileQuery)
             return true;
 
+        if (IsItInfraQuery(question))
+            return true;
+
         if (isAuditQuery && ContainsAny(
                 question,
-                "backup",
-                "server",
                 "kepatuhan",
                 "pelanggaran minor",
-                "anomali suhu",
-                "cctv"))
+                "anomali suhu"))
         {
             return true;
         }
@@ -416,7 +446,8 @@ public class QueryAnalyzerService
 
     private static string ExtractDivisionFromQuestion(string question)
     {
-        if (ContainsAny(question, "it & digitalisasi", "it digitalisasi", "digitalisasi"))
+        if (ContainsAny(question, "it & digitalisasi", "it digitalisasi", "digitalisasi") ||
+            Regex.IsMatch(question, @"\bIT\b", RegexOptions.IgnoreCase))
             return "IT & Digitalisasi";
 
         if (ContainsAny(question, "operasional kilang"))
@@ -606,7 +637,22 @@ public class QueryAnalyzerService
             "lembur",
             "maintenance",
             "log",
-            "kode"
+            "kode",
+            "gaji",
+            "penghasilan",
+            "upah",
+            "tunjangan",
+            "honor",
+            "bulan",
+            "tahun",
+            "hari",
+            "kapan",
+            "jadwal",
+            "divisi",
+            "server",
+            "backup",
+            "password",
+            "cctv"
         };
 
         foreach (var stopWord in stopWords)
@@ -805,6 +851,35 @@ public class QueryAnalyzerService
         }
 
         return string.Empty;
+    }
+
+    // Returns true only for queries that look like they might reference a
+    // sensitive field via informal phrasing or synonyms not covered by keyword map.
+    // Keep this list narrow — false positives cost a full LLM round-trip (~5s).
+    private static bool MightHaveUnknownFieldIntent(string question) =>
+        ContainsAny(question,
+            "dapatnya", "kompensasi", "remunerasi", "sandi", "login credential",
+            "kasih tau", "tolong kasih", "ceritakan", "berapa besar", "berapa total");
+
+    private static List<string> ExtractRequestedFields(string question) =>
+        FieldKeywordMap.ExtractFieldKeys(question);
+
+    private static FieldValidationResult ValidateFields(List<string> fields)
+    {
+        foreach (var fieldKey in fields)
+        {
+            var access = FieldSchema.GetAccess(fieldKey);
+
+            if (access == FieldAccess.Sensitive)
+                return FieldValidationResult.Block(
+                    $"Maaf, informasi tentang '{fieldKey.Replace('_', ' ')}' bersifat sensitif dan tidak dapat diakses melalui sistem ini.");
+
+            if (access == FieldAccess.Unavailable)
+                return FieldValidationResult.Block(
+                    $"Maaf, informasi tentang '{fieldKey.Replace('_', ' ')}' tidak tersedia dalam sistem ini.");
+        }
+
+        return FieldValidationResult.Pass();
     }
 
     private static bool ContainsAny(string value, params string[] keywords)
