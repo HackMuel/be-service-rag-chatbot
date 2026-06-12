@@ -2,6 +2,16 @@
 
 Panduan ini digunakan untuk menguji backend RAG secara manual setelah dependency lokal berjalan. Fokus pengujian adalah upload dokumen, Object Storage, Qdrant payload/vector retrieval, chat regression, logging, dan error handling dependency.
 
+> **Catatan pembaruan (2026-06-11) — baca dulu, mengoreksi beberapa bagian di bawah:**
+> 1. **Semua endpoint kini wajib header `X-API-Key`** (env var `Security__ApiKey` / `appsettings.json`).
+>    Tambahkan `-H "X-API-Key: <key>"` pada semua contoh `curl` di bawah.
+> 2. **Endpoint `GET /health` dan `GET /api/qdrant/status` BELUM terpasang** di build saat ini.
+>    Endpoint nyata: `POST /api/chat`, `POST /api/ingest`, `POST /api/upload-pdf`, `POST /api/upload-txt`,
+>    `GET /api/qdrant/init`, `POST /api/qdrant/recreate`. Abaikan Seksi 6 & 7 sampai endpoint itu dibuat;
+>    verifikasi Qdrant lewat scroll langsung (Seksi 10) atau `GET /api/qdrant/init`.
+> 3. Mode aktif **Semantic** (`Rag.Mode`); rahasia via env var. Untuk ingest bersih (tanpa duplikat)
+>    gunakan `POST /api/qdrant/recreate` lalu upload ulang.
+
 ## 1. Prerequisites
 
 Pastikan service berikut aktif:
@@ -164,10 +174,11 @@ Pastikan `appsettings.json` memiliki konfigurasi berikut:
     "TimeoutSeconds": 120
   },
   "Retrieval": {
-    "SemanticTopK": 5,
+    "SemanticTopK": 15,
     "SemanticScoreThreshold": 0.55,
-    "SemanticMaxContextChunks": 3,
-    "StructuredDefaultLimit": 50
+    "SemanticMaxContextChunks": 5,
+    "StructuredDefaultLimit": 50,
+    "HybridSearchEnabled": true
   },
   "ObjectStorage": {
     "Endpoint": "localhost:9000",
@@ -178,9 +189,20 @@ Pastikan `appsettings.json` memiliki konfigurasi berikut:
   },
   "StorageMode": {
     "WriteDocumentChunksToPostgres": false
+  },
+  "Rag": {
+    "Mode": "Semantic",
+    "ShadowCompare": false
+  },
+  "Security": {
+    "ApiKey": "CHANGE_ME (atau via env var Security__ApiKey)"
   }
 }
 ```
+
+> Nilai non-rahasia di atas adalah default aktual. `HybridSearchEnabled=true` mengaktifkan
+> sparse BM25 + RRF. `Rag.Mode=Semantic` mengaktifkan analyzer LLM + guard. Rahasia
+> (`Security:ApiKey`, password DB, kunci MinIO) sebaiknya via environment variable.
 
 Expected behavior:
 

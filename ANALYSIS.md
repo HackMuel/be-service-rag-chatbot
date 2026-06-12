@@ -1,3 +1,14 @@
+> **STATUS DOKUMEN (2026-06-11): HISTORIS / SNAPSHOT AWAL.**
+> Dokumen ini adalah analisis arsitektur & rencana migrasi **sebelum** refactor dikerjakan.
+> Bagian "Kondisi Sekarang" di bawah memotret keadaan LAMA (banyak hardcode) — sebagian besar
+> **sudah berubah**. Rencana migrasi **Tahap 0–3 sudah selesai** (query understanding LLM,
+> hybrid dense+sparse, chunking generik, DatasetSchema config-driven, guard anti-misroute);
+> **Tahap 4 (cleanup legacy) ditunda**. Untuk kondisi terkini lihat [docs/PRD.md](docs/PRD.md)
+> dan [docs/CODEBASE_GUIDE.md](docs/CODEBASE_GUIDE.md). Dokumen ini dipertahankan sebagai
+> rekam jejak rasional desain.
+
+---
+
 1. Ringkasan Arsitektur
 Struktur folder:
 

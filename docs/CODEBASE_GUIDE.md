@@ -4,6 +4,24 @@
 > Setiap klaim dirujuk ke `file:line`. Disusun 2026-06-08 dari verifikasi langsung atas kode di
 > branch `query-understanding-layer`.
 
+> **PEMBARUAN 2026-06-11 (baca ini dulu — mengoreksi beberapa bagian di bawah):**
+> Sejak dokumen ini disusun, beberapa hal berubah. Untuk gambaran produk menyeluruh lihat [PRD.md](PRD.md).
+> 1. **`appsettings.json` kini benar-benar di-`.gitignore`** (baris `.gitignore` diperbaiki) + tersedia
+>    template tracked [`appsettings.Example.json`](../appsettings.Example.json). Rahasia (API key, dll.)
+>    disuntik via **environment variable** (`Security__ApiKey`, `ConnectionStrings__SupabaseDb`, …).
+>    → koreksi §0 yang menyebut "untracked, rawan ikut commit".
+> 2. **Ingestion config-driven (`DatasetSchema`)** — chunking, ekstraksi field, dan daftar index
+>    dibangun dari skema (default = dataset Pertamina) di [Models/DatasetSchemaOptions.cs](../Models/DatasetSchemaOptions.cs),
+>    bukan lagi 6 header/belasan method hardcoded. Payload kini **dua-lapis**: field sistem + field
+>    dataset per-recordType (chunk sop/profile/document tak lagi membawa slot kosong; ditambah `chunkType`, `ingestedAt`).
+> 3. **Guard anti-misroute di planner** ([RagChatService.cs](../Services/RagChatService.cs)):
+>    fast-path deterministik (NIK/kode/tanggal/nama-korpus), `StripPhantomIdentifiers`, grounding gate,
+>    `ApplyIntentSanityGate`, dan rute generic-policy → semantik. Dokumen generik (SECTION/N.N/BAB)
+>    kini terjawab benar.
+> 4. **Ekstraksi PDF berbasis koordinat** ([PdfTextExtractor.cs](../Services/Ingestion/PdfTextExtractor.cs))
+>    menggantikan flatten-1-baris-per-halaman.
+> 5. Endpoint health-check **belum terpasang** (hanya 6 endpoint minimal-API).
+
 ---
 
 ## §0 — Verifikasi realita (Langkah 0)

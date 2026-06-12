@@ -12,6 +12,26 @@ Sistem memakai hybrid RAG 3 level:
 
 Tujuan utama sistem adalah menjawab berdasarkan dokumen internal, bukan berdasarkan pengetahuan bebas model.
 
+## 1b. Pembaruan Arsitektur (2026-06-11) 
+
+> Beberapa bagian di bawah memotret arsitektur **lama**. Ringkasan kondisi **terkini**
+> (sumber kebenaran: [docs/PRD.md](docs/PRD.md) & [docs/CODEBASE_GUIDE.md](docs/CODEBASE_GUIDE.md)):
+>
+> - **Pemahaman query (mode `Semantic`, default).** Query dianalisis oleh **`QueryUnderstandingService`**
+>   (LLM, output JSON dipaksa) — bukan lagi hanya `QueryAnalyzerService` keyword (kini jadi *fallback*).
+>   Ditambah **fast-path deterministik** (NIK/kode/tanggal/nama-korpus dijawab ~ms tanpa LLM) dan
+>   **guard anti-misroute** (strip identifier halusinasi, grounding gate ke nilai korpus, intent-sanity).
+> - **Hybrid search.** Qdrant memakai **named vectors**: `dense` (768, Cosine) + `sparse` (BM25),
+>   digabung via **RRF**. Bukan dense-only.
+> - **Dokumen generik didukung.** Ekstraksi PDF **berbasis koordinat** + chunking per-section
+>   (`SECTION N`, `N.N`, `BAB`) → `recordType=document`. Tidak terkunci ke dataset Pertamina.
+> - **Ingestion config-driven (`DatasetSchema`).** Section/field/index dibangun dari konfigurasi
+>   (default = skema Pertamina), bukan hardcode. **Payload dua-lapis**: field sistem + field dataset
+>   per-recordType (+ `chunkType`, `ingestedAt`).
+> - **Keamanan.** Semua endpoint wajib header **`X-API-Key`**. Rahasia via **environment variable**;
+>   `appsettings.json` di-`.gitignore`, template tracked di [`appsettings.Example.json`](appsettings.Example.json).
+> - **Target framework `net10.0`.** Endpoint nyata lihat Bagian 10 (belum ada `/health`).
+
 ## 2. Tujuan Project
 
 Tujuan project:
@@ -183,7 +203,15 @@ Payload Qdrant berisi:
 - `maintenanceStatus`
 - `technician`
 - `sectionTitle`
+- `chunkType`
 - `chunkIndex`
+- `ingestedAt`
+
+> **Catatan (terkini):** vector kini **named** — `dense` (768, Cosine) + `sparse` (BM25). Payload
+> bersifat **dua-lapis**: field sistem (`documentId`, `documentTitle`, `content`, `recordType`,
+> `sectionTitle`, `chunkType`, `chunkIndex`, `ingestedAt`, `department`) selalu ada, sedangkan field
+> dataset (`nik`, `division`, `maintenanceCode`, dst.) **hanya** ditulis untuk recordType yang relevan
+> — jadi chunk `sop`/`profile`/`document` tidak lagi membawa slot kosong. `nameNormalized` diturunkan dari `name`.
 
 Contoh point:
 
@@ -478,6 +506,10 @@ Maaf, saya tidak menemukan informasi tersebut.
 
 ## 10. API Endpoints
 
+> **Semua endpoint memerlukan header `X-API-Key`** (nilai dari `Security:ApiKey` / env var
+> `Security__ApiKey`). Tambahkan `-H "X-API-Key: <key>"` pada contoh `curl` di bawah.
+> Endpoint health-check belum terpasang pada build saat ini.
+
 ### `POST /api/chat`
 
 Mengirim pertanyaan user ke chatbot.
@@ -557,6 +589,15 @@ Membuat atau memastikan collection Qdrant tersedia.
 curl http://localhost:5057/api/qdrant/init
 ```
 
+### `POST /api/qdrant/recreate`
+
+Drop dan buat ulang collection dengan skema named vectors (`dense`+`sparse`). Semua data hilang —
+gunakan untuk ingest **bersih** (tanpa duplikat), lalu upload ulang semua dokumen.
+
+```bash
+curl -X POST http://localhost:5057/api/qdrant/recreate -H "X-API-Key: <key>"
+```
+
 ## 11. Environment Configuration
 
 Contoh `appsettings.json`:
@@ -579,10 +620,11 @@ Contoh `appsettings.json`:
     "TimeoutSeconds": 120
   },
   "Retrieval": {
-    "SemanticTopK": 5,
+    "SemanticTopK": 15,
     "SemanticScoreThreshold": 0.55,
-    "SemanticMaxContextChunks": 3,
-    "StructuredDefaultLimit": 50
+    "SemanticMaxContextChunks": 5,
+    "StructuredDefaultLimit": 50,
+    "HybridSearchEnabled": true
   },
   "ObjectStorage": {
     "Endpoint": "localhost:9000",
@@ -593,9 +635,21 @@ Contoh `appsettings.json`:
   },
   "StorageMode": {
     "WriteDocumentChunksToPostgres": false
+  },
+  "Rag": {
+    "Mode": "Semantic",
+    "ShadowCompare": false
+  },
+  "Security": {
+    "ApiKey": "CHANGE_ME"
   }
 }
 ```
+
+> `HybridSearchEnabled=true` mengaktifkan sparse BM25 + RRF. `Rag.Mode` = `Legacy` | `Hybrid` |
+> `Semantic` (aktif: `Semantic`); `Rag.ShadowCompare` hanya untuk pengukuran (matikan saat operasi).
+> Ingestion juga membaca section opsional `DatasetSchema`; bila kosong, dipakai skema bawaan
+> (dataset Pertamina). Rahasia (`Security:ApiKey`, password DB, kunci MinIO) sebaiknya via env var.
 
 Penjelasan:
 

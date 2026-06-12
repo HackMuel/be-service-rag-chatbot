@@ -203,16 +203,30 @@ kini ditangani LLM langsung. Tidak ada regresi pada B/D/E (semua benar).
   ketimpa template SOP generik → lapisan jawaban (AnswerFormatterService).
 - Field-projection (C1: "divisi sinta" → dump semua field) → lapisan jawaban.
 
------------------------------------------------------------------------------ |
+---
 
+## Status terkini (2026-06-11)
+
+Item "belum tertangani" di atas sebagiannya sudah dibereskan pada iterasi berikutnya:
+
+- ✅ **Anti-misroute (guard deterministik):** `StripPhantomIdentifiers` + grounding gate +
+  `ApplyIntentSanityGate` + rute generic-policy → semantik. Query dokumen **generik**
+  (NusaCloud/Aurora/Cendana/GreenFleet) yang dulu salah-rute ke domain dummy kini terjawab
+  benar (kapan backup, prioritas insiden, akses ruang server, aturan akun Lab, batas pengadaan).
+- ✅ **Ingestion config-driven (`DatasetSchema`)** + payload dua-lapis (Gate 1–3 lulus,
+  behavior-preserving terhadap dummy).
+- ✅ **Ekstraksi PDF berbasis koordinat** → chunking per-section untuk dokumen generik.
+- ✅ **Secrets via env var** + `appsettings.json` di-`.gitignore` + template `appsettings.Example.json`.
+
+**Masih terbuka (lihat [docs/PRD.md](docs/PRD.md) §12):** field-projection (C1), retrieval
+by-equipment (P15/C3), kebijakan jawaban policy P9, presisi ringkasan LLM, test otomatis.
+
+Alur ringkas final:
+
+```
 POST /api/chat
-↓
-Analisis pertanyaan user
-↓
-Apakah pertanyaan dilarang?
-├─ Ya  → jawab aman, berhenti
-└─ Tidak
-   ↓
-   Apakah pertanyaan semantic?
-   ├─ Ya  → dense + sparse Qdrant search → LLM
-   └─ Tidak → payload/structured retrieval → deterministic answer atau LLM
+ → fast-path (NIK/kode/tanggal/nama korpus) → filter payload → jawaban (tanpa LLM)
+ → QueryUnderstanding (LLM, JSON) + guard (phantom-id, grounding, intent-sanity)
+     ├─ SemanticGrounded → hybrid dense+sparse (RRF) → prompt grounded → LLM
+     └─ selain itu       → filter payload / template → jawaban
+```
