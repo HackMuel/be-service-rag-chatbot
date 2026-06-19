@@ -1,0 +1,7 @@
+{
+  "answer": "Ditemukan 4 data karyawan.\n\n| No | NIK | Nama | Divisi | Jabatan | Shift | Status |\n|---|---|---|---|---|---|---|\n| 1 | RU6-1020 | Sinta Lestari | Maintenance | Manager | C | Tetap |\n| 2 | RU6-1034 | Sinta Lestari | Distribusi | Operator | C | Kontrak |\n| 3 | RU6-1036 | Sinta Lestari | Keuangan | Engineer | C | Kontrak |\n| 4 | RU6-1037 | Sinta Lestari | Security | Operator | C | Tetap |\n\nDitemukan 3 data rekap lembur.\n\n| No | Tanggal | Nama | Divisi | Durasi | Approval |\n|---|---|---|---|---|---|\n| 1 | 13-04-2026 | Sinta Lestari | IT & Digitalisasi | 1 Jam | Pending |\n| 2 | 26-04-2026 | Sinta Lestari | Maintenance | 3 Jam | Disetujui |\n| 3 | 28-04-2026 | Sinta Lestari | Security | 3 Jam | Ditolak |",
+  "notFound": false,
+  "sources": [
+    "Dummy_Data_Internal_Pertamina_RUVI_Balongan.pdf"
+  ]
+}

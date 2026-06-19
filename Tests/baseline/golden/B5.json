@@ -1,0 +1,7 @@
+{
+  "answer": "Ditemukan 15 data rekap lembur.\n\n| No | Tanggal | Nama | Divisi | Durasi | Approval |\n|---|---|---|---|---|---|\n| 1 | 01-04-2026 | Aulia Rahman | Maintenance | 2 Jam | Disetujui |\n| 2 | 02-04-2026 | Lukman Hakim | Security | 5 Jam | Disetujui |\n| 3 | 04-04-2026 | Rina Maharani | Maintenance | 5 Jam | Disetujui |\n| 4 | 06-04-2026 | Nadia Putri | Distribusi | 4 Jam | Disetujui |\n| 5 | 07-04-2026 | Lukman Hakim | Maintenance | 2 Jam | Disetujui |\n| 6 | 09-04-2026 | Agus Setiawan | Human Capital | 3 Jam | Disetujui |\n| 7 | 12-04-2026 | Aulia Rahman | HSSE | 4 Jam | Disetujui |\n| 8 | 15-04-2026 | Kevin Wijaya | Distribusi | 1 Jam | Disetujui |\n| 9 | 16-04-2026 | Nadia Putri | Maintenance | 5 Jam | Disetujui |\n| 10 | 18-04-2026 | Hendra Wijaya | Operasional Kilang | 1 Jam | Disetujui |\n| 11 | 23-04-2026 | Hendra Wijaya | IT & Digitalisasi | 5 Jam | Disetujui |\n| 12 | 24-04-2026 | Nadia Putri | Security | 1 Jam | Disetujui |\n| 13 | 26-04-2026 | Sinta Lestari | Maintenance | 3 Jam | Disetujui |\n| 14 | 27-04-2026 | Dimas Prakoso | Security | 1 Jam | Disetujui |\n| 15 | 29-04-2026 | Agus Setiawan | Security | 2 Jam | Disetujui |",
+  "notFound": false,
+  "sources": [
+    "Dummy_Data_Internal_Pertamina_RUVI_Balongan.pdf"
+  ]
+}
