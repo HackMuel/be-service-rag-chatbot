@@ -1,11 +1,12 @@
 using System.Text.Json;
+using be_service.Abstractions;
 using be_service.Models;
 
 namespace be_service.Services;
 
 public class FieldIntentClassifier
 {
-    private readonly OllamaService _ollamaService;
+    private readonly IChatService _ollamaService;
     private readonly ILogger<FieldIntentClassifier> _logger;
 
     private const string SystemPrompt = """
@@ -40,7 +41,7 @@ public class FieldIntentClassifier
         """;
 
     public FieldIntentClassifier(
-        OllamaService ollamaService,
+        IChatService ollamaService,
         ILogger<FieldIntentClassifier> logger)
     {
         _ollamaService = ollamaService;

@@ -1,11 +1,12 @@
 using System.Text;
+using be_service.Abstractions;
 using be_service.Models;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 
 namespace be_service.Services;
 
-public class OllamaService
+public class OllamaService : IChatService, IEmbeddingService
 {
     private readonly HttpClient _httpClient;
     private readonly OllamaOptions _options;

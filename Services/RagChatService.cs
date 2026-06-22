@@ -2,11 +2,13 @@ using System.Text.RegularExpressions;
 using be_service.Models;
 using Microsoft.Extensions.Options;
 
+using be_service.Abstractions;
+
 namespace be_service.Services;
 
 public class RagChatService
 {
-    private readonly OllamaService _ollamaService;
+    private readonly IChatService _ollamaService;
     private readonly ILogger<RagChatService> _logger;
     private readonly QueryAnalyzerService _queryAnalyzerService;
     private readonly QueryUnderstandingService _queryUnderstandingService;
@@ -18,7 +20,7 @@ public class RagChatService
     private readonly RagModeOptions _ragMode;
 
     public RagChatService(
-        OllamaService ollamaService,
+        IChatService ollamaService,
         ILogger<RagChatService> logger,
         QueryAnalyzerService queryAnalyzerService,
         QueryUnderstandingService queryUnderstandingService,
