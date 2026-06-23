@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="be_service.Core/be_service.Core.csproj" />
+  <Project Path="be_service.csproj" />
+  <Project Path="be_service.Infrastructure/be_service.Infrastructure.csproj" />
+</Solution>
