@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+
 namespace be_service.Abstractions;
 
 public interface IDocumentTextExtractor
