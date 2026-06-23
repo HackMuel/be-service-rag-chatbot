@@ -8,7 +8,7 @@ namespace be_service.Services;
 
 public class RetrievalService
 {
-    private readonly QdrantService _qdrantService;
+    private readonly IVectorStore _qdrantService;
     private readonly IEmbeddingService _ollamaService;
     private readonly SparseBm25Encoder _sparseEncoder;
     private readonly StructuredEntityResolver _structuredEntityResolver;
@@ -16,7 +16,7 @@ public class RetrievalService
     private readonly ILogger<RetrievalService> _logger;
 
     public RetrievalService(
-        QdrantService qdrantService,
+        IVectorStore qdrantService,
         IEmbeddingService ollamaService,
         ChunkRepository chunkRepository,
         StructuredEntityResolver structuredEntityResolver,

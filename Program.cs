@@ -14,6 +14,7 @@ builder.Services.AddSingleton<QdrantSearchClient>();
 builder.Services.AddSingleton<QdrantFilterBuilder>();
 builder.Services.AddSingleton<QdrantScrollClient>();
 builder.Services.AddSingleton<QdrantService>();
+builder.Services.AddSingleton<IVectorStore>(sp => sp.GetRequiredService<QdrantService>());
 builder.Services.AddSingleton<SparseBm25Encoder>();
 builder.Services.AddSingleton(sp =>
 {
