@@ -72,6 +72,7 @@ builder.Services.AddScoped<ChunkingService>();
 builder.Services.AddScoped<EmbeddingIngestionService>();
 builder.Services.AddScoped<DocumentIngestionOrchestrator>();
 builder.Services.AddScoped<ChunkRepository>();
+builder.Services.AddScoped<IChunkStore>(sp => sp.GetRequiredService<ChunkRepository>());
 builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();

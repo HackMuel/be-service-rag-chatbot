@@ -1,7 +1,5 @@
 using be_service.Models;
-using be_service.Repositories;
 using Microsoft.Extensions.Options;
-
 using be_service.Abstractions;
 
 namespace be_service.Services;

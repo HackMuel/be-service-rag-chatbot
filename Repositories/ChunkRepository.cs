@@ -2,10 +2,11 @@ using System.Text.Json;
 using be_service.Models;
 using Npgsql;
 using NpgsqlTypes;
+using be_service.Abstractions;
 
 namespace be_service.Repositories;
 
-public class ChunkRepository
+public class ChunkRepository : IChunkStore
 {
     private static readonly HashSet<string> AllowedMetadataKeys = new(StringComparer.Ordinal)
     {

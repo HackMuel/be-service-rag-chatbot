@@ -1,19 +1,17 @@
 using be_service.Models;
-using be_service.Repositories;
 using Microsoft.Extensions.Options;
-using Npgsql;
 using be_service.Abstractions;
+using Microsoft.Extensions.Logging;
 
 namespace be_service.Services;
 
 public class DocumentIngestionOrchestrator
 {
-    private readonly IConfiguration _configuration;
     private readonly TextNormalizer _textNormalizer;
     private readonly ChunkingService _chunkingService;
     private readonly EmbeddingIngestionService _embeddingIngestionService;
     private readonly IVectorStore _qdrantService;
-    private readonly ChunkRepository _chunkRepository;
+    private readonly IChunkStore _chunkStore;
     private readonly StorageModeOptions _storageModeOptions;
     private readonly DatasetSchemaOptions _schema;
     private readonly bool _hybridSearchEnabled;
@@ -21,25 +19,23 @@ public class DocumentIngestionOrchestrator
     private readonly ILogger<DocumentIngestionOrchestrator> _logger;
 
     public DocumentIngestionOrchestrator(
-        IConfiguration configuration,
         TextNormalizer textNormalizer,
         ChunkingService chunkingService,
         EmbeddingIngestionService embeddingIngestionService,
         IVectorStore qdrantService,
-        ChunkRepository chunkRepository,
+        IChunkStore chunkStore,
         IDocumentRepository documentRepository,
         IOptions<StorageModeOptions> storageModeOptions,
         IOptions<RetrievalOptions> retrievalOptions,
         IOptions<DatasetSchemaOptions> datasetSchema,
         ILogger<DocumentIngestionOrchestrator> logger)
     {
-        _configuration = configuration;
         _textNormalizer = textNormalizer;
         _chunkingService = chunkingService;
         _embeddingIngestionService = embeddingIngestionService;
         _qdrantService = qdrantService;
         _documentRepository = documentRepository;
-        _chunkRepository = chunkRepository;
+        _chunkStore = chunkStore;
         _storageModeOptions = storageModeOptions.Value;
         _schema = datasetSchema.Value;
         _hybridSearchEnabled = retrievalOptions.Value.HybridSearchEnabled;
@@ -88,7 +84,7 @@ public class DocumentIngestionOrchestrator
 
             if (_storageModeOptions.WriteDocumentChunksToPostgres)
             {
-                await _chunkRepository.InsertChunkAsync(chunk);
+                await _chunkStore.InsertChunkAsync(chunk);
             }
 
             var embedding = await _embeddingIngestionService.GenerateEmbeddingAsync(chunks[i].Content);
