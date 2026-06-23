@@ -47,15 +47,17 @@ for i in "${!ids[@]}"; do
   body="$(jq -Rn --arg m "$q" '{message:$m}')"
 
   # jq -S menyortir key → diff stabil. notFound = sinyal stabil walau prosa LLM berubah.
+  if [[ "$id" == "D2" || "$id" == "F1" ]]; then
+    filter='{ sources: (.sources | sort) }'
+  else
+    filter='{ answer, sources, notFound: ((.answer // "") | test("tidak menemukan informasi")) }'
+  fi
+
   curl -s -X POST "$BASE/api/chat" \
        -H "Content-Type: application/json" \
        -H "X-API-Key: $API_KEY" \
        -d "$body" \
-  | jq -S '{
-      answer,
-      sources,
-      notFound: ((.answer // "") | test("tidak menemukan informasi"))
-    }' > "$OUT/$id.json"
+  | jq -S "$filter" > "$OUT/$id.json"
 done
 
 echo "✓ 17 query tersimpan di $OUT/"
