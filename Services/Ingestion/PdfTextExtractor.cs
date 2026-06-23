@@ -2,10 +2,11 @@ using System.Text;
 using System.Text.RegularExpressions;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Content;
+using be_service.Abstractions;
 
 namespace be_service.Services;
 
-public class PdfTextExtractor
+public class PdfTextExtractor : IDocumentTextExtractor
 {
     public Task<string> ExtractTextAsync(IFormFile file)
     {

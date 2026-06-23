@@ -4,12 +4,12 @@ namespace be_service.Services;
 
 public class IngestionService
 {
-    private readonly PdfTextExtractor _pdfTextExtractor;
+    private readonly IDocumentTextExtractor _pdfTextExtractor;
     private readonly DocumentIngestionOrchestrator _orchestrator;
     private readonly IBlobStore _objectStorageService;
 
     public IngestionService(
-        PdfTextExtractor pdfTextExtractor,
+        IDocumentTextExtractor pdfTextExtractor,
         DocumentIngestionOrchestrator orchestrator,
         IBlobStore objectStorageService)
     {

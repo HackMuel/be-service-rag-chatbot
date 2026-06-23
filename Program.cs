@@ -66,6 +66,7 @@ builder.Services.AddScoped<ObjectStorageService>();
 builder.Services.AddScoped<IBlobStore>(sp => sp.GetRequiredService<ObjectStorageService>());
 builder.Services.AddScoped<RetrievalService>();
 builder.Services.AddScoped<PdfTextExtractor>();
+builder.Services.AddScoped<IDocumentTextExtractor>(sp => sp.GetRequiredService<PdfTextExtractor>());
 builder.Services.AddScoped<TextNormalizer>();
 builder.Services.AddScoped<ChunkingService>();
 builder.Services.AddScoped<EmbeddingIngestionService>();
