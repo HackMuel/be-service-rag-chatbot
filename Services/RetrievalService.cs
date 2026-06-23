@@ -18,7 +18,6 @@ public class RetrievalService
     public RetrievalService(
         IVectorStore qdrantService,
         IEmbeddingService ollamaService,
-        ChunkRepository chunkRepository,
         IEntityCatalog structuredEntityResolver,
         IOptions<RetrievalOptions> retrievalOptions,
         SparseBm25Encoder sparseEncoder,
