@@ -5,7 +5,7 @@ using be_service.Abstractions;
 
 namespace be_service.Services;
 
-public class StructuredEntityResolver
+public class StructuredEntityResolver : IEntityCatalog
 {
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
 

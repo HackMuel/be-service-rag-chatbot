@@ -16,7 +16,7 @@ public class RagChatService
     private readonly PromptBuilderService _promptBuilderService;
     private readonly RetrievalService _retrievalService;
     // NEW: resolver injected for the grounded abstention gate (Option A).
-    private readonly StructuredEntityResolver _structuredEntityResolver;
+    private readonly IEntityCatalog _structuredEntityResolver;
     private readonly RagModeOptions _ragMode;
 
     public RagChatService(
@@ -27,7 +27,7 @@ public class RagChatService
         AnswerFormatterService answerFormatterService,
         PromptBuilderService promptBuilderService,
         RetrievalService retrievalService,
-        StructuredEntityResolver structuredEntityResolver, // NEW: corpus grounding for the gate
+        IEntityCatalog structuredEntityResolver, // NEW: corpus grounding for the gate
         IOptions<RagModeOptions> ragMode)
     {
         _ollamaService = ollamaService;

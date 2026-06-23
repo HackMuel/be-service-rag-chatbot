@@ -38,6 +38,7 @@ builder.Services.AddScoped<QueryUnderstandingService>();
 builder.Services.AddSingleton<AnswerFormatterService>();
 builder.Services.AddSingleton<PromptBuilderService>();
 builder.Services.AddSingleton<StructuredEntityResolver>();
+builder.Services.AddSingleton<IEntityCatalog>(sp => sp.GetRequiredService<StructuredEntityResolver>());
 builder.Services.Configure<ObjectStorageOptions>(
     builder.Configuration.GetSection("ObjectStorage"));
 builder.Services.Configure<StorageModeOptions>(
