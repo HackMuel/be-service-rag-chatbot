@@ -62,6 +62,7 @@ builder.Services.PostConfigure<DatasetSchemaOptions>(options =>
         options.RecordTypes = DatasetSchemaOptions.Default().RecordTypes;
 });
 builder.Services.AddScoped<ObjectStorageService>();
+builder.Services.AddScoped<IBlobStore>(sp => sp.GetRequiredService<ObjectStorageService>());
 builder.Services.AddScoped<RetrievalService>();
 builder.Services.AddScoped<PdfTextExtractor>();
 builder.Services.AddScoped<TextNormalizer>();
