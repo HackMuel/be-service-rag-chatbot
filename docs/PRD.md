@@ -4,10 +4,10 @@
 | | |
 |---|---|
 | **Produk** | Backend Chatbot RAG Internal (be_service) |
-| **Versi dokumen** | 1.0 |
-| **Tanggal** | 2026-06-11 |
-| **Status** | Production-like prototype |
-| **Branch** | `query-understanding-layer` |
+| **Versi dokumen** | 1.1 |
+| **Tanggal** | 2026-06-25 |
+| **Status** | Production-like prototype (Clean Architecture 3-layer) |
+| **Branch** | `CleanArchitecture` |
 | **Penulis** | Samuel P |
 | **Reviewer** | Pembimbing Magang |
 
@@ -139,6 +139,23 @@ Use case inti:
 
 ## 7. Arsitektur Sistem
 
+### 7.0 Clean Architecture (3 layer, boundary compiler-enforced)
+
+Kode dipecah menjadi **3 project** (solution `be_service.slnx`); alur runtime tidak berubah,
+migrasi hanya memindah file & menegakkan boundary:
+
+- **`be_service.Core`** — Models, `Abstractions/` (8 ports), Services (logika murni & use-case),
+  Exceptions. **Tanpa** dependency infra.
+- **`be_service.Infrastructure`** — implementasi port: `QdrantService`, `OllamaService`,
+  `ObjectStorageService`, `PdfTextExtractor`, `DocumentRepository`, `ChunkRepository`. Referensi Core.
+- **`be_service` (Api)** — `Program.cs`, middleware, endpoints. Referensi Core + Infrastructure.
+
+**Dependency rule ditegakkan compiler:** package infra (`Qdrant.Client`, `Npgsql`, `Minio`,
+`Pgvector`, `PdfPig`, `iText7`) hanya ada di `be_service.Infrastructure.csproj`, sehingga Core
+**tidak bisa** mengimpor Qdrant/Npgsql/Minio (pelanggaran = gagal compile). SQL `documents`
+dicabut dari orchestrator ke `DocumentRepository` (Repository pattern). Build dijalankan dari
+root solution, bukan single project. Diagram & daftar 8 port: lihat [README.md](../README.md) §2.
+
 ### 7.1 Tech Stack
 | Komponen | Teknologi |
 |---|---|
@@ -219,6 +236,8 @@ Semua endpoint memerlukan header `X-API-Key`. *(Catatan: endpoint health-check b
 ## 11. Status Implementasi Saat Ini
 
 **Sudah selesai (Tahap 0–3 dari rencana migrasi):**
+- ✅ **Migrasi Clean Architecture** — 3 project (Core / Infrastructure / Api), 8 ports,
+  boundary dependency **ditegakkan compiler** (package infra terisolasi di Infrastructure).
 - ✅ Ingestion generik (ekstraksi koordinat + chunking per-section) & terstruktur.
 - ✅ Skema dataset **config-driven** (behavior-preserving, terverifikasi).
 - ✅ Query understanding LLM (`format:json` + few-shot sinonim) + fast-path deterministik.
@@ -233,24 +252,34 @@ dokumen **generik** (NusaCloud/Aurora/Cendana) sama-sama terjawab benar pada pen
 
 ## 12. Keterbatasan Saat Ini (Known Limitations)
 
-1. **Ingestion terstruktur** masih memakai skema default dataset contoh; dataset terstruktur
-   baru perlu konfigurasi skema sendiri (jalur naratif generik sudah dataset-agnostik).
-2. **Lapisan jawaban** belum mendukung *field-projection* ("X bekerja di divisi apa" masih
+1. **Schema-driven belum menyeluruh.** Ingestion/indexing/filtering **sudah** config-driven via
+   `DatasetSchema` (default = dataset contoh), dan jalur naratif generik dataset-agnostik —
+   namun **structured retrieval cascade** (Level 1) masih **dataset-specific** dan belum
+   sepenuhnya digerakkan oleh skema. Dataset terstruktur baru perlu penyesuaian cascade.
+2. **Bug routing query SOP** — sebagian pertanyaan SOP/policy bisa salah rute (mis. tertangkap
+   jalur eksak/template alih-alih semantik, atau sebaliknya); perlu diperbaiki di planner.
+3. **Penanganan input tak koheren** belum tegas — query ambigu/tak bermakna belum selalu
+   ditolak/diklarifikasi dengan rapi.
+4. **Lapisan jawaban** belum mendukung *field-projection* ("X bekerja di divisi apa" masih
    menampilkan seluruh field); ringkasan LLM kadang kurang presisi.
-3. **Retrieval by-equipment** ("teknisi <alat>") belum tersambung ke cascade.
-4. **Belum ada** autentikasi per-user/ACL, endpoint health, streaming, document-management/
+5. **Retrieval by-equipment** ("teknisi <alat>") belum tersambung ke cascade.
+6. **Belum ada** autentikasi per-user/ACL, endpoint health, streaming, document-management/
    delete-reindex, background ingestion, RAG evaluation otomatis.
-5. **Tidak ada suite test otomatis** (proyek `Tests/` masih kerangka, di-exclude dari build);
+7. **Tidak ada suite test otomatis** (proyek `Tests/` masih kerangka, di-exclude dari build);
    verifikasi saat ini manual.
-6. **Re-ingest menduplikasi** (kemampuan delete-by-document ada tapi belum dipakai) →
+8. **Re-ingest menduplikasi** (kemampuan delete-by-document ada tapi belum dipakai) →
    gunakan `POST /api/qdrant/recreate` untuk ingest bersih.
-7. **LLM lokal kecil** (1.5B) berisiko parse/latency; dimitigasi `format:json` + retry + fallback.
+9. **LLM lokal kecil** (1.5B) berisiko parse/latency; dimitigasi `format:json` + retry + fallback.
 
 ---
 
 ## 13. Roadmap
 
 **Jangka pendek:**
+- **Schema-driven retrieval** — jadikan structured cascade (Level 1) digerakkan `DatasetSchema`
+  agar dataset terstruktur baru tak perlu ubah kode (ingestion/indexing/filtering sudah schema-driven).
+- **Fix bug routing query SOP** di planner (kurangi salah rute SOP/policy).
+- **Penanganan input tak koheren** — tolak/klarifikasi query ambigu dengan rapi.
 - Field-projection & presisi jawaban (lapisan jawaban).
 - Retrieval by-equipment; scope retrieval per-dokumen.
 - Endpoint health-check; matikan `ShadowCompare` default; fail-closed API key.
