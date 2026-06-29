@@ -1,23 +1,22 @@
 using be_service.Models;
-using be_service.Repositories;
 using Microsoft.Extensions.Options;
+using be_service.Abstractions;
 
 namespace be_service.Services;
 
 public class RetrievalService
 {
-    private readonly QdrantService _qdrantService;
-    private readonly OllamaService _ollamaService;
+    private readonly IVectorStore _qdrantService;
+    private readonly IEmbeddingService _ollamaService;
     private readonly SparseBm25Encoder _sparseEncoder;
-    private readonly StructuredEntityResolver _structuredEntityResolver;
+    private readonly IEntityCatalog _structuredEntityResolver;
     private readonly RetrievalOptions _retrievalOptions;
     private readonly ILogger<RetrievalService> _logger;
 
     public RetrievalService(
-        QdrantService qdrantService,
-        OllamaService ollamaService,
-        ChunkRepository chunkRepository,
-        StructuredEntityResolver structuredEntityResolver,
+        IVectorStore qdrantService,
+        IEmbeddingService ollamaService,
+        IEntityCatalog structuredEntityResolver,
         IOptions<RetrievalOptions> retrievalOptions,
         SparseBm25Encoder sparseEncoder,
         ILogger<RetrievalService> logger)

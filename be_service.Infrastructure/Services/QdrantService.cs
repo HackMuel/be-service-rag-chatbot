@@ -1,8 +1,9 @@
+    using be_service.Abstractions;
 using be_service.Models;
 
 namespace be_service.Services;
 
-public class QdrantService
+public class QdrantService : IVectorStore
 {
     private readonly QdrantCollectionService _collectionService;
     private readonly QdrantPointWriter _pointWriter;

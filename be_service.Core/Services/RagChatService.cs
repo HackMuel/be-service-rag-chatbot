@@ -2,11 +2,13 @@ using System.Text.RegularExpressions;
 using be_service.Models;
 using Microsoft.Extensions.Options;
 
+using be_service.Abstractions;
+
 namespace be_service.Services;
 
 public class RagChatService
 {
-    private readonly OllamaService _ollamaService;
+    private readonly IChatService _ollamaService;
     private readonly ILogger<RagChatService> _logger;
     private readonly QueryAnalyzerService _queryAnalyzerService;
     private readonly QueryUnderstandingService _queryUnderstandingService;
@@ -14,18 +16,18 @@ public class RagChatService
     private readonly PromptBuilderService _promptBuilderService;
     private readonly RetrievalService _retrievalService;
     // NEW: resolver injected for the grounded abstention gate (Option A).
-    private readonly StructuredEntityResolver _structuredEntityResolver;
+    private readonly IEntityCatalog _structuredEntityResolver;
     private readonly RagModeOptions _ragMode;
 
     public RagChatService(
-        OllamaService ollamaService,
+        IChatService ollamaService,
         ILogger<RagChatService> logger,
         QueryAnalyzerService queryAnalyzerService,
         QueryUnderstandingService queryUnderstandingService,
         AnswerFormatterService answerFormatterService,
         PromptBuilderService promptBuilderService,
         RetrievalService retrievalService,
-        StructuredEntityResolver structuredEntityResolver, // NEW: corpus grounding for the gate
+        IEntityCatalog structuredEntityResolver, // NEW: corpus grounding for the gate
         IOptions<RagModeOptions> ragMode)
     {
         _ollamaService = ollamaService;

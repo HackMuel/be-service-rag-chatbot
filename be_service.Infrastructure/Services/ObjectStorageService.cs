@@ -3,10 +3,11 @@ using be_service.Models;
 using Microsoft.Extensions.Options;
 using Minio;
 using Minio.DataModel.Args;
+using be_service.Abstractions;
 
 namespace be_service.Services;
 
-public class ObjectStorageService
+public class ObjectStorageService : IBlobStore
 {
     private readonly ObjectStorageOptions _options;
     private readonly IMinioClient _minioClient;

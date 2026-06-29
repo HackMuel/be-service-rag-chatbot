@@ -1,0 +1,7 @@
+{
+  "answer": "Ditemukan 2 data karyawan.\n\n| No | NIK | Nama | Divisi | Jabatan | Shift | Status |\n|---|---|---|---|---|---|---|\n| 1 | RU6-1001 | Agus Setiawan | IT & Digitalisasi | Supervisor | B | Tetap |\n| 2 | RU6-1012 | Nadia Putri | Keuangan | Supervisor | A | Kontrak |",
+  "notFound": false,
+  "sources": [
+    "Dummy_Data_Internal_Pertamina_RUVI_Balongan.pdf"
+  ]
+}

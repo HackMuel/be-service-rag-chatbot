@@ -6,3 +6,4 @@ appsettings.json
 appsettings.*.json
 !appsettings.Example.json
 wwwroot/
+docs/TECH_DEBT.md

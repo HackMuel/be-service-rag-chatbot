@@ -8,18 +8,17 @@
 
   <ItemGroup>
     <Compile Remove="Tests/**/*.cs" />
+    <Compile Remove="be_service.Core/**/*.cs" />
+    <Compile Remove="be_service.Infrastructure/**/*.cs" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.7" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="itext7" Version="9.6.0" />
-    <PackageReference Include="itext7.bouncy-castle-adapter" Version="9.6.0" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.7" />
-    <PackageReference Include="Minio" Version="7.0.0" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="Npgsql" Version="10.0.2" />
-    <PackageReference Include="Pgvector" Version="0.3.2" />
-    <PackageReference Include="Qdrant.Client" Version="1.18.1" />
-    <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
+    <ProjectReference Include="be_service.Core\be_service.Core.csproj" />
+    <ProjectReference Include="be_service.Infrastructure\be_service.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

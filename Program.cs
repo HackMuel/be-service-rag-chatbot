@@ -2,6 +2,9 @@ using be_service.Models;
 using be_service.Repositories;
 using be_service.Services;
 using Microsoft.Extensions.Options;
+
+using be_service.Abstractions;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -11,6 +14,7 @@ builder.Services.AddSingleton<QdrantSearchClient>();
 builder.Services.AddSingleton<QdrantFilterBuilder>();
 builder.Services.AddSingleton<QdrantScrollClient>();
 builder.Services.AddSingleton<QdrantService>();
+builder.Services.AddSingleton<IVectorStore>(sp => sp.GetRequiredService<QdrantService>());
 builder.Services.AddSingleton<SparseBm25Encoder>();
 builder.Services.AddSingleton(sp =>
 {
@@ -23,6 +27,9 @@ builder.Services.AddSingleton(sp =>
     return new Qdrant.Client.QdrantClient(host, port, https: false);
 });
 builder.Services.AddHttpClient<OllamaService>();
+builder.Services.AddTransient<IChatService>(sp => sp.GetRequiredService<OllamaService>());
+builder.Services.AddTransient<IEmbeddingService>(sp => sp.GetRequiredService<OllamaService>());
+
 builder.Services.AddControllers();
 builder.Services.AddScoped<IngestionService>();
 builder.Services.AddScoped<FieldIntentClassifier>();
@@ -31,6 +38,7 @@ builder.Services.AddScoped<QueryUnderstandingService>();
 builder.Services.AddSingleton<AnswerFormatterService>();
 builder.Services.AddSingleton<PromptBuilderService>();
 builder.Services.AddSingleton<StructuredEntityResolver>();
+builder.Services.AddSingleton<IEntityCatalog>(sp => sp.GetRequiredService<StructuredEntityResolver>());
 builder.Services.Configure<ObjectStorageOptions>(
     builder.Configuration.GetSection("ObjectStorage"));
 builder.Services.Configure<StorageModeOptions>(
@@ -55,13 +63,17 @@ builder.Services.PostConfigure<DatasetSchemaOptions>(options =>
         options.RecordTypes = DatasetSchemaOptions.Default().RecordTypes;
 });
 builder.Services.AddScoped<ObjectStorageService>();
+builder.Services.AddScoped<IBlobStore>(sp => sp.GetRequiredService<ObjectStorageService>());
 builder.Services.AddScoped<RetrievalService>();
 builder.Services.AddScoped<PdfTextExtractor>();
+builder.Services.AddScoped<IDocumentTextExtractor>(sp => sp.GetRequiredService<PdfTextExtractor>());
 builder.Services.AddScoped<TextNormalizer>();
 builder.Services.AddScoped<ChunkingService>();
 builder.Services.AddScoped<EmbeddingIngestionService>();
 builder.Services.AddScoped<DocumentIngestionOrchestrator>();
 builder.Services.AddScoped<ChunkRepository>();
+builder.Services.AddScoped<IChunkStore>(sp => sp.GetRequiredService<ChunkRepository>());
+builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddScoped<RagChatService>();

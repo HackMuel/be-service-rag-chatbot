@@ -1,10 +1,11 @@
 using System.Text.RegularExpressions;
 using be_service.Models;
 using Microsoft.Extensions.Options;
+using be_service.Abstractions;
 
 namespace be_service.Services;
 
-public class StructuredEntityResolver
+public class StructuredEntityResolver : IEntityCatalog
 {
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
 
@@ -35,7 +36,7 @@ public class StructuredEntityResolver
         "nggak"
     };
 
-    private readonly QdrantService _qdrantService;
+    private readonly IVectorStore _qdrantService;
     private readonly ILogger<StructuredEntityResolver> _logger;
     private readonly double _fuzzyMultiTokenThreshold;
     private readonly double _fuzzySingleTokenThreshold;
@@ -44,7 +45,7 @@ public class StructuredEntityResolver
     private DateTimeOffset _cacheExpiresAt = DateTimeOffset.MinValue;
 
     public StructuredEntityResolver(
-        QdrantService qdrantService,
+        IVectorStore qdrantService,
         ILogger<StructuredEntityResolver> logger,
         IOptions<RetrievalOptions> retrievalOptions)
     {

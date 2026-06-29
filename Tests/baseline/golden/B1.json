@@ -1,0 +1,7 @@
+{
+  "answer": "Ditemukan 6 data karyawan.\n\n| No | NIK | Nama | Divisi | Jabatan | Shift | Status |\n|---|---|---|---|---|---|---|\n| 1 | RU6-1001 | Agus Setiawan | IT & Digitalisasi | Supervisor | B | Tetap |\n| 2 | RU6-1016 | Lukman Hakim | IT & Digitalisasi | Engineer | A | Tetap |\n| 3 | RU6-1024 | Dimas Prakoso | IT & Digitalisasi | Manager | B | Tetap |\n| 4 | RU6-1027 | Kevin Wijaya | IT & Digitalisasi | Analyst | C | Tetap |\n| 5 | RU6-1028 | Rio Kurniawan | IT & Digitalisasi | Engineer | A | Tetap |\n| 6 | RU6-1031 | Hendra Wijaya | IT & Digitalisasi | Coordinator | C | Tetap |",
+  "notFound": false,
+  "sources": [
+    "Dummy_Data_Internal_Pertamina_RUVI_Balongan.pdf"
+  ]
+}

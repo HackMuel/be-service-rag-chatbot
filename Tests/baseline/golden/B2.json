@@ -1,0 +1,7 @@
+{
+  "answer": "Ditemukan 12 data karyawan.\n\n| No | NIK | Nama | Divisi | Jabatan | Shift | Status |\n|---|---|---|---|---|---|---|\n| 1 | RU6-1004 | Dewi Sartika | Maintenance | Manager | A | Tetap |\n| 2 | RU6-1005 | Budi Santoso | Human Capital | Coordinator | A | Kontrak |\n| 3 | RU6-1012 | Nadia Putri | Keuangan | Supervisor | A | Kontrak |\n| 4 | RU6-1016 | Lukman Hakim | IT & Digitalisasi | Engineer | A | Tetap |\n| 5 | RU6-1018 | Nadia Putri | Distribusi | Engineer | A | Kontrak |\n| 6 | RU6-1021 | Fajar Nugroho | Distribusi | Coordinator | A | Tetap |\n| 7 | RU6-1023 | Rio Kurniawan | Security | Analyst | A | Kontrak |\n| 8 | RU6-1025 | Aulia Rahman | Maintenance | Engineer | A | Kontrak |\n| 9 | RU6-1026 | Rio Kurniawan | HSSE | Analyst | A | Kontrak |\n| 10 | RU6-1028 | Rio Kurniawan | IT & Digitalisasi | Engineer | A | Tetap |\n| 11 | RU6-1033 | Lukman Hakim | HSSE | Analyst | A | Kontrak |\n| 12 | RU6-1040 | Lukman Hakim | Operasional Kilang | Coordinator | A | Kontrak |",
+  "notFound": false,
+  "sources": [
+    "Dummy_Data_Internal_Pertamina_RUVI_Balongan.pdf"
+  ]
+}

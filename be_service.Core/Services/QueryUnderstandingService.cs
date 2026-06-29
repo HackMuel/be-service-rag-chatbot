@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using be_service.Models;
+using Microsoft.AspNetCore.Identity;
+using be_service.Abstractions;
 
 namespace be_service.Services;
 
@@ -9,7 +11,7 @@ namespace be_service.Services;
 // keyword arrays. Falls back to QueryAnalyzerService on any LLM/parse failure.
 public class QueryUnderstandingService
 {
-    private readonly OllamaService _ollamaService;
+    private readonly IChatService _ollamaService;
     private readonly QueryAnalyzerService _fallback;
     private readonly ILogger<QueryUnderstandingService> _logger;
 
@@ -51,7 +53,7 @@ public class QueryUnderstandingService
         """;
 
     public QueryUnderstandingService(
-        OllamaService ollamaService,
+        IChatService ollamaService,
         QueryAnalyzerService fallback,
         ILogger<QueryUnderstandingService> logger)
     {

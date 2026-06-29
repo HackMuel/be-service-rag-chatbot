@@ -1,0 +1,18 @@
+[A1 ] data karyawan NIK RU6-0001
+[A2 ] log maintenance kode MT-001
+[A3 ] rekap lembur tanggal 01-01-2025
+[B1 ] siapa saja karyawan divisi IT?
+[B2 ] karyawan shift A ada berapa?
+[B3 ] karyawan dengan status kontrak
+[B4 ] siapa supervisor di perusahaan ini?
+[B5 ] rekap lembur yang sudah disetujui
+[C1 ] sinta lestari bekerja di divisi apa?
+[C2 ] tampilkan semua data karyawan sinta lestari
+[C3 ] siapa teknisi yang menangani MT-002?
+[D1 ] apa aturan APD di area produksi?
+[D2 ] siapa yang boleh masuk area tangki penyimpanan?
+[D3 ] apa saja SOP keamanan yang berlaku?
+[E1 ] berapa persen tingkat kepatuhan APD?
+[E2 ] apa nama unit perusahaan ini?
+[F1 ] bagaimana prosedur operasional kilang?
+✓ 17 query tersimpan di tests/baseline/golden/

@@ -1,41 +1,41 @@
 using be_service.Models;
-using be_service.Repositories;
 using Microsoft.Extensions.Options;
-using Npgsql;
+using be_service.Abstractions;
+using Microsoft.Extensions.Logging;
 
 namespace be_service.Services;
 
 public class DocumentIngestionOrchestrator
 {
-    private readonly IConfiguration _configuration;
     private readonly TextNormalizer _textNormalizer;
     private readonly ChunkingService _chunkingService;
     private readonly EmbeddingIngestionService _embeddingIngestionService;
-    private readonly QdrantService _qdrantService;
-    private readonly ChunkRepository _chunkRepository;
+    private readonly IVectorStore _qdrantService;
+    private readonly IChunkStore _chunkStore;
     private readonly StorageModeOptions _storageModeOptions;
     private readonly DatasetSchemaOptions _schema;
     private readonly bool _hybridSearchEnabled;
+    private readonly IDocumentRepository _documentRepository;
     private readonly ILogger<DocumentIngestionOrchestrator> _logger;
 
     public DocumentIngestionOrchestrator(
-        IConfiguration configuration,
         TextNormalizer textNormalizer,
         ChunkingService chunkingService,
         EmbeddingIngestionService embeddingIngestionService,
-        QdrantService qdrantService,
-        ChunkRepository chunkRepository,
+        IVectorStore qdrantService,
+        IChunkStore chunkStore,
+        IDocumentRepository documentRepository,
         IOptions<StorageModeOptions> storageModeOptions,
         IOptions<RetrievalOptions> retrievalOptions,
         IOptions<DatasetSchemaOptions> datasetSchema,
         ILogger<DocumentIngestionOrchestrator> logger)
     {
-        _configuration = configuration;
         _textNormalizer = textNormalizer;
         _chunkingService = chunkingService;
         _embeddingIngestionService = embeddingIngestionService;
         _qdrantService = qdrantService;
-        _chunkRepository = chunkRepository;
+        _documentRepository = documentRepository;
+        _chunkStore = chunkStore;
         _storageModeOptions = storageModeOptions.Value;
         _schema = datasetSchema.Value;
         _hybridSearchEnabled = retrievalOptions.Value.HybridSearchEnabled;
@@ -44,30 +44,13 @@ public class DocumentIngestionOrchestrator
 
     public async Task<Guid> IngestAsync(IngestRequest request)
     {
-        var connectionString =
-            _configuration.GetConnectionString("SupabaseDb");
-
         await _qdrantService.EnsureCollectionAsync();
-        await using var conn = new NpgsqlConnection(connectionString);
-        await conn.OpenAsync();
 
-        Guid documentId;
+        var documentId = await _documentRepository.CreateAsync(
+            request.Title,
+            request.Department);
 
-        var insertDocumentSql = @"
-            insert into documents (title, source_type, department)
-            values (@title, 'text', @department)
-            returning id;
-        ";
-
-        await using (var cmd = new NpgsqlCommand(insertDocumentSql, conn))
-        {
-            cmd.Parameters.AddWithValue("title", request.Title);
-            cmd.Parameters.AddWithValue("department", request.Department);
-
-            documentId = (Guid)(await cmd.ExecuteScalarAsync())!;
-        }
-
-        await TryUpdateDocumentStorageMetadataAsync(conn, documentId, request);
+        await TryUpdateDocumentStorageMetadataAsync(documentId, request);
 
         var normalizedContent = _textNormalizer.Normalize(request.Content);
         var chunks = _chunkingService.Chunk(normalizedContent);
@@ -101,7 +84,7 @@ public class DocumentIngestionOrchestrator
 
             if (_storageModeOptions.WriteDocumentChunksToPostgres)
             {
-                await _chunkRepository.InsertChunkAsync(chunk);
+                await _chunkStore.InsertChunkAsync(chunk);
             }
 
             var embedding = await _embeddingIngestionService.GenerateEmbeddingAsync(chunks[i].Content);
@@ -117,7 +100,6 @@ public class DocumentIngestionOrchestrator
     }
 
     private async Task TryUpdateDocumentStorageMetadataAsync(
-        NpgsqlConnection conn,
         Guid documentId,
         IngestRequest request)
     {
@@ -127,30 +109,11 @@ public class DocumentIngestionOrchestrator
             return;
         }
 
-        const string updateDocumentStorageSql = @"
-            update documents
-            set
-                storage_bucket = @storage_bucket,
-                storage_object_key = @storage_object_key,
-                content_type = @content_type
-            where id = @id;
-        ";
-
-        try
-        {
-            await using var cmd = new NpgsqlCommand(updateDocumentStorageSql, conn);
-            cmd.Parameters.AddWithValue("id", documentId);
-            cmd.Parameters.AddWithValue("storage_bucket", request.StorageBucket);
-            cmd.Parameters.AddWithValue("storage_object_key", request.StorageObjectKey);
-            cmd.Parameters.AddWithValue("content_type", request.ContentType);
-
-            await cmd.ExecuteNonQueryAsync();
-        }
-        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UndefinedColumn)
-        {
-            _logger.LogWarning(
-                "Document storage metadata columns are missing. Run Sql/add_object_storage_columns.sql to persist object storage metadata.");
-        }
+        await _documentRepository.UpdateStorageMetadataAsync(
+            documentId,
+            request.StorageBucket,
+            request.StorageObjectKey,
+            request.ContentType);
     }
 
     private RetrievedChunk CreateRetrievedChunk(
@@ -197,20 +160,20 @@ public class DocumentIngestionOrchestrator
         // Mirror dataset fields onto the typed legacy properties so the optional
         // Postgres chunk store still works. Unknown-for-recordType fields stay
         // empty (the desired cleanup — no cross-type values).
-        chunk.Nik               = datasetFields.GetValueOrDefault("nik", "");
-        chunk.Name              = datasetFields.GetValueOrDefault("name", "");
-        chunk.MaintenanceCode   = datasetFields.GetValueOrDefault("maintenanceCode", "");
-        chunk.Date              = datasetFields.GetValueOrDefault("date", "");
-        chunk.Division          = datasetFields.GetValueOrDefault("division", "");
-        chunk.Position          = datasetFields.GetValueOrDefault("position", "");
-        chunk.Shift             = datasetFields.GetValueOrDefault("shift", "");
-        chunk.EmployeeStatus    = datasetFields.GetValueOrDefault("employeeStatus", "");
-        chunk.Duration          = datasetFields.GetValueOrDefault("duration", "");
-        chunk.Approval          = datasetFields.GetValueOrDefault("approval", "");
-        chunk.Equipment         = datasetFields.GetValueOrDefault("equipment", "");
-        chunk.Location          = datasetFields.GetValueOrDefault("location", "");
+        chunk.Nik = datasetFields.GetValueOrDefault("nik", "");
+        chunk.Name = datasetFields.GetValueOrDefault("name", "");
+        chunk.MaintenanceCode = datasetFields.GetValueOrDefault("maintenanceCode", "");
+        chunk.Date = datasetFields.GetValueOrDefault("date", "");
+        chunk.Division = datasetFields.GetValueOrDefault("division", "");
+        chunk.Position = datasetFields.GetValueOrDefault("position", "");
+        chunk.Shift = datasetFields.GetValueOrDefault("shift", "");
+        chunk.EmployeeStatus = datasetFields.GetValueOrDefault("employeeStatus", "");
+        chunk.Duration = datasetFields.GetValueOrDefault("duration", "");
+        chunk.Approval = datasetFields.GetValueOrDefault("approval", "");
+        chunk.Equipment = datasetFields.GetValueOrDefault("equipment", "");
+        chunk.Location = datasetFields.GetValueOrDefault("location", "");
         chunk.MaintenanceStatus = datasetFields.GetValueOrDefault("maintenanceStatus", "");
-        chunk.Technician        = datasetFields.GetValueOrDefault("technician", "");
+        chunk.Technician = datasetFields.GetValueOrDefault("technician", "");
 
         return chunk;
     }

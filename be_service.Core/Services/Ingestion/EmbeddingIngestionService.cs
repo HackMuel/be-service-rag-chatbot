@@ -1,13 +1,15 @@
+using be_service.Abstractions;
+
 namespace be_service.Services;
 
 public class EmbeddingIngestionService
 {
-    private readonly OllamaService _ollamaService;
+    private readonly IEmbeddingService _ollamaService;
     private readonly SparseBm25Encoder _sparseEncoder;
     private readonly ILogger<EmbeddingIngestionService> _logger;
 
     public EmbeddingIngestionService(
-        OllamaService ollamaService,
+        IEmbeddingService ollamaService,
         SparseBm25Encoder sparseEncoder,
         ILogger<EmbeddingIngestionService> logger)
     {
